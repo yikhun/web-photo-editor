@@ -1,0 +1,64 @@
+/* 摳圖／消除圖工具面板專用樣式（吃 main.css 的 CSS 變數，不另定義顏色）*/
+
+.ai-box-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--gap-sm);
+}
+
+.ai-box-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--color-text-dim);
+}
+
+.ai-box-list-item button {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.ai-hint {
+  font-size: 11px;
+  color: var(--color-text-faint);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.ai-gradient-swatch {
+  width: 32px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--color-border-light);
+  cursor: pointer;
+  padding: 0;
+}
+
+.ai-gradient-swatch.selected {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-active);
+}
+
+.ai-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+input[type='color'].ai-color-input {
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}

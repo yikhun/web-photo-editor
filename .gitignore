@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+npm-debug.log*
+public/models/*.onnx
+public/models/*.bin
+public/models/*.data
+
+# 研究與測試資料（第三方原始碼、模型、測試紀錄），不公開
+_research/

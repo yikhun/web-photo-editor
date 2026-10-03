@@ -1,0 +1,246 @@
+/* 影片工具（#/video 分頁與左側「影片摳圖」工具共用）樣式。吃 main.css 的 CSS 變數，不另定義顏色。 */
+
+.vw-root {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  width: 100%;
+}
+
+.vw-sidebar {
+  flex: 0 0 160px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  padding: var(--gap-md);
+  background: var(--color-sidebar);
+  border-right: 1px solid var(--color-border);
+}
+
+.vw-mode-btn {
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+  color: var(--color-text);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+}
+
+.vw-mode-btn:hover {
+  border-color: var(--color-accent);
+}
+
+.vw-mode-btn.selected {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.vw-panel {
+  flex: 0 0 300px;
+  background: var(--color-panel);
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+  padding: var(--gap-md);
+}
+
+.vw-stage {
+  flex: 1 1 auto;
+  position: relative;
+  min-width: 0;
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-md);
+  padding: var(--gap-md);
+  overflow: hidden;
+}
+
+/* ---------- 內嵌模式（左側「影片摳圖」工具）----------
+   設定區直接掛在工具的 #panel（吃 #panel 自己的樣式，不需額外規則）；
+   預覽/時間軸/結果對比掛進 #stage-wrap 內的覆蓋層，蓋在圖片 viewport 畫布之上。 */
+.vw-stage-embedded {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-md);
+  padding: var(--gap-md);
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+/* ---------- 上傳區 ---------- */
+.vw-dropzone {
+  width: 100%;
+  max-width: 480px;
+  cursor: pointer;
+}
+
+/* ---------- 預覽畫布 ---------- */
+.vw-preview-wrap {
+  position: relative;
+  max-width: 100%;
+  max-height: calc(100% - 48px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.vw-preview-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  background: repeating-conic-gradient(
+      var(--color-checker-a) 0% 25%,
+      var(--color-checker-b) 0% 50%
+    )
+    0 0 / 20px 20px;
+  touch-action: none;
+  cursor: crosshair;
+  border: 1px solid var(--color-border);
+}
+
+.vw-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  width: 100%;
+  max-width: 640px;
+  flex: 0 0 auto;
+}
+
+.vw-timeline-row .ui-button {
+  flex: 0 0 auto;
+}
+
+.vw-timeline {
+  flex: 1 1 auto;
+}
+
+.vw-timecode {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- 結果展示：前後對比拖曳線 ---------- */
+.vw-result-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-sm);
+  width: 100%;
+  max-width: 640px;
+}
+
+.vw-compare-box {
+  position: relative;
+  width: 100%;
+  max-height: 60vh;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--color-border);
+}
+
+.vw-checker-bg {
+  background: repeating-conic-gradient(
+      var(--color-checker-a) 0% 25%,
+      var(--color-checker-b) 0% 50%
+    )
+    0 0 / 20px 20px;
+}
+
+.vw-compare-video {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+}
+
+.vw-compare-after {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.vw-compare-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-accent);
+  left: 50%;
+  pointer-events: none;
+}
+
+.vw-compare-slider {
+  width: 100%;
+}
+
+.vw-result-controls {
+  display: flex;
+  gap: var(--gap-sm);
+}
+
+/* ---------- 影片工作區專用長任務遮罩（見 src/video/taskOverlay.js）---------- */
+.vw-task-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 21, 23, 0.72);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-md);
+  z-index: 100;
+  backdrop-filter: blur(1px);
+}
+
+.vw-task-overlay.show {
+  display: flex;
+}
+
+.vw-task-title {
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.vw-task-desc {
+  font-size: 12px;
+  color: var(--color-text-dim);
+  text-align: center;
+  max-width: 320px;
+}
+
+.vw-task-bar-track {
+  width: 260px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-bg-alt);
+  overflow: hidden;
+}
+
+.vw-task-bar-fill {
+  height: 100%;
+  background: var(--color-accent);
+  width: 0%;
+  transition: width 0.15s;
+}
+
+.vw-task-percent {
+  font-size: 12px;
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
