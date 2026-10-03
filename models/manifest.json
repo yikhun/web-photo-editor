@@ -1,0 +1,35 @@
+{
+  "u2net.onnx": {
+    "size": 175997641,
+    "parts": [
+      {
+        "suffix": "part0",
+        "size": 89128960
+      },
+      {
+        "suffix": "part1",
+        "size": 86868681
+      }
+    ]
+  },
+  "u2netp.onnx": {
+    "size": 4574861,
+    "parts": []
+  },
+  "migan.onnx": {
+    "size": 28079181,
+    "parts": []
+  },
+  "realesr-general-x4v3-static384.onnx": {
+    "size": 4878946,
+    "parts": []
+  },
+  "upscayl-standard-4x-128.onnx": {
+    "size": 66925664,
+    "parts": []
+  },
+  "upscayl-digital-art-4x-128.onnx": {
+    "size": 17906916,
+    "parts": []
+  }
+}
