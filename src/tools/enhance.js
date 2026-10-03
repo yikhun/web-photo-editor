@@ -4,6 +4,7 @@ import { upscale, planUpscale, estimateTileCount } from '../ai/esrgan.js';
 import { getBackend } from '../ai/ort.js';
 import { cloneCanvas } from '../core/canvasUtil.js';
 import { resizeCanvas } from '../ai/util.js';
+import { t } from '../core/i18n.js';
 
 const icon = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4L12 3z" stroke-width="2" stroke-linejoin="round"/>
@@ -25,11 +26,6 @@ let sizeInfoEl = null;
 let backendInfoEl = null;
 let startBtn = null;
 
-function resetState() {
-  modelKey = 'realesrgan-fast';
-  scale = 4;
-}
-
 function updateModelCardSelection() {
   modelCardEls.forEach((card, i) => card.classList.toggle('selected', MODEL_OPTIONS[i].id === modelKey));
 }
@@ -43,19 +39,25 @@ function updateSizeInfo() {
   const backend = getBackend();
   const perTile = backend === 'wasm' ? 1.5 : 0.3;
   const estSeconds = Math.max(1, Math.round(tiles * perTile));
-  const estText = estSeconds >= 60 ? `約 ${Math.ceil(estSeconds / 60)} 分鐘` : `約 ${estSeconds} 秒`;
+  const estText =
+    estSeconds >= 60 ? t('約 {n} 分鐘', { n: Math.ceil(estSeconds / 60) }) : t('約 {n} 秒', { n: estSeconds });
 
   sizeInfoEl.innerHTML = '';
   sizeInfoEl.appendChild(
-    ctx.ui.el('div', null, `目前 ${img.width}×${img.height} → 輸出 ${plan.finalW}×${plan.finalH}`),
+    ctx.ui.el('div', null, t('目前 {w}×{h} → 輸出 {fw}×{fh}', { w: img.width, h: img.height, fw: plan.finalW, fh: plan.finalH })),
   );
-  sizeInfoEl.appendChild(ctx.ui.el('div', null, `預估切成 ${tiles} 個區塊，耗時${estText}（粗估，依裝置效能而異）`));
+  sizeInfoEl.appendChild(
+    ctx.ui.el('div', null, t('預估切成 {tiles} 個區塊，耗時{est}（粗估，依裝置效能而異）', { tiles, est: estText })),
+  );
   if (plan.tooLarge) {
     sizeInfoEl.appendChild(
       ctx.ui.el(
         'div',
         'enhance-warning',
-        `輸出過大（中間放大尺寸 ${plan.outW4x}×${plan.outH4x}，超過約 8000 萬像素上限），請先縮小圖片或改用較低倍率`,
+        t('輸出過大（中間放大尺寸 {w}×{h}，超過約 8000 萬像素上限），請先縮小圖片或改用較低倍率', {
+          w: plan.outW4x,
+          h: plan.outH4x,
+        }),
       ),
     );
   }
@@ -66,8 +68,8 @@ function updateBackendInfo() {
   if (!backendInfoEl) return;
   const backend = getBackend();
   backendInfoEl.textContent = backend
-    ? `目前推論後端：${backend === 'webgpu' ? 'WebGPU' : 'WASM（CPU，較慢）'}`
-    : '推論後端：尚未建立（執行時優先嘗試 WebGPU，失敗退回 WASM）';
+    ? t('目前推論後端：{backend}', { backend: backend === 'webgpu' ? 'WebGPU' : t('WASM（CPU，較慢）') })
+    : t('推論後端：尚未建立（執行時優先嘗試 WebGPU，失敗退回 WASM）');
 }
 
 function buildModelCards() {
@@ -76,9 +78,9 @@ function buildModelCards() {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'enhance-model-card' + (opt.id === modelKey ? ' selected' : '');
-    card.appendChild(ctx.ui.el('div', 'enhance-model-title', opt.title));
-    card.appendChild(ctx.ui.el('div', 'enhance-model-desc', opt.desc));
-    card.appendChild(ctx.ui.el('div', 'enhance-model-size', opt.sizeLabel));
+    card.appendChild(ctx.ui.el('div', 'enhance-model-title', t(opt.title)));
+    card.appendChild(ctx.ui.el('div', 'enhance-model-desc', t(opt.desc)));
+    card.appendChild(ctx.ui.el('div', 'enhance-model-size', t(opt.sizeLabel)));
     card.addEventListener('click', () => {
       modelKey = opt.id;
       updateModelCardSelection();
@@ -100,16 +102,16 @@ async function runEnhance() {
   );
 
   const result = await ctx.runTask({
-    title: 'AI 變清晰中',
+    title: t('AI 變清晰中'),
     async run({ signal, progress }) {
       return upscale(before, { model: modelKey, scale, signal, onProgress: progress });
     },
   });
   if (!result) return; // 取消或失敗：畫面不變
 
-  ctx.commit(result, `AI 放大 ${scale}x`);
+  ctx.commit(result, t('AI 放大 {scale}x', { scale }));
   ctx.showCompare(beforeForCompare, result);
-  ctx.toast('已完成變清晰', 'success');
+  ctx.toast(t('已完成變清晰'), 'success');
   updateBackendInfo();
   updateSizeInfo();
 }
@@ -122,14 +124,15 @@ export default {
   mount(panelEl, c) {
     ctx = c;
     panelEl.innerHTML = '';
-    resetState();
+    // modelKey/scale 刻意不在這裡重置：它們是模組層級變數，重新 mount（例如切換語言重畫面板）
+    // 時應保留使用者已選的模型與倍率，只有頁面第一次載入時的初始值才當預設。
 
     const modelCards = buildModelCards();
 
     const scaleGroup = ctx.ui.buttonGroup(
       [
-        { id: '2', label: '2 倍' },
-        { id: '4', label: '4 倍' },
+        { id: '2', label: t('2 倍') },
+        { id: '4', label: t('4 倍') },
       ],
       String(scale),
       (id) => {
@@ -140,12 +143,12 @@ export default {
 
     sizeInfoEl = ctx.ui.el('div', 'enhance-size-info');
     backendInfoEl = ctx.ui.el('div', 'enhance-backend-info');
-    startBtn = ctx.ui.button('開始變清晰', () => runEnhance(), { primary: true, block: true });
+    startBtn = ctx.ui.button(t('開始變清晰'), () => runEnhance(), { primary: true, block: true });
 
-    panelEl.appendChild(ctx.ui.section('模型', [modelCards]));
-    panelEl.appendChild(ctx.ui.section('倍率', [scaleGroup]));
-    panelEl.appendChild(ctx.ui.section('輸出尺寸', [sizeInfoEl]));
-    panelEl.appendChild(ctx.ui.section('執行', [startBtn, backendInfoEl]));
+    panelEl.appendChild(ctx.ui.section(t('模型'), [modelCards]));
+    panelEl.appendChild(ctx.ui.section(t('倍率'), [scaleGroup]));
+    panelEl.appendChild(ctx.ui.section(t('輸出尺寸'), [sizeInfoEl]));
+    panelEl.appendChild(ctx.ui.section(t('執行'), [startBtn, backendInfoEl]));
 
     updateSizeInfo();
     updateBackendInfo();

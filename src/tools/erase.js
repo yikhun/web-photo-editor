@@ -2,6 +2,7 @@
 import '../styles/tool-ai.css';
 import { inpaint } from '../ai/migan.js';
 import { createCanvas, cloneCanvas } from '../core/canvasUtil.js';
+import { t } from '../core/i18n.js';
 
 const icon = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M19 20H9l-6-6 10-10 6 6-7 7m-7-1 7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -24,6 +25,9 @@ let isStroking = false;
 let currentStrokeMask = null; // Float32Array(w*h)，0~1
 let strokeBBox = null; // { x0,y0,x1,y1 } 累積畫過的範圍（含）
 let mouseImagePoint = null;
+let lastDocImage = null; // ctx.doc.getImage() 參照，分辨「真的換圖」vs「同一張圖重新 mount（如切換語言／自己剛 commit）」
+let lastPanelEl = null; // mount 時的 panelEl，history:navigate 時用來重畫面板
+let unsubscribeHistoryNav = null;
 
 function resetState() {
   mode = 'box';
@@ -184,8 +188,10 @@ function refreshBoxList() {
   boxListEl.innerHTML = '';
   boxes.forEach((b, i) => {
     const row = ctx.ui.el('div', 'ai-box-list-item');
-    row.appendChild(ctx.ui.el('span', null, `框 ${i + 1}（${Math.round(b.x1 - b.x0)}×${Math.round(b.y1 - b.y0)}px）`));
-    const delBtn = ctx.ui.button('刪除', () => {
+    row.appendChild(
+      ctx.ui.el('span', null, t('框 {n}（{w}×{h}px）', { n: i + 1, w: Math.round(b.x1 - b.x0), h: Math.round(b.y1 - b.y0) })),
+    );
+    const delBtn = ctx.ui.button(t('刪除'), () => {
       boxes.splice(i, 1);
       refreshBoxList();
       ctx.viewport.requestRender();
@@ -194,7 +200,7 @@ function refreshBoxList() {
     boxListEl.appendChild(row);
   });
   if (boxes.length === 0) {
-    boxListEl.appendChild(ctx.ui.el('div', 'ai-hint', '尚未框選任何區域，在畫布上拖曳畫框'));
+    boxListEl.appendChild(ctx.ui.el('div', 'ai-hint', t('尚未框選任何區域，在畫布上拖曳畫框')));
   }
 }
 
@@ -203,18 +209,19 @@ async function removeWatermark() {
   const beforeSnapshot = cloneCanvas(workingCanvas);
   const todoBoxes = boxes.slice();
   const result = await ctx.runTask({
-    title: '移除水印中',
+    title: t('移除水印中'),
     async run({ signal, progress }) {
       let current = cloneCanvas(workingCanvas);
       for (let i = 0; i < todoBoxes.length; i++) {
-        if (signal.aborted) throw new DOMException('使用者已取消', 'AbortError');
+        if (signal.aborted) throw new DOMException(t('使用者已取消'), 'AbortError');
         const expanded = expandBox(todoBoxes[i], 4);
         let maskCanvas = null;
         if (smartDetect) maskCanvas = smartDetectMask(current, expanded);
         if (!maskCanvas) maskCanvas = buildBoxMask(expanded);
         current = await inpaint(current, maskCanvas, {
           signal,
-          onProgress: (p, text) => progress((i + p) / todoBoxes.length, text || `處理第 ${i + 1}/${todoBoxes.length} 個框`),
+          onProgress: (p, text) =>
+            progress((i + p) / todoBoxes.length, text || t('處理第 {i}/{n} 個框', { i: i + 1, n: todoBoxes.length })),
         });
       }
       return current;
@@ -222,11 +229,12 @@ async function removeWatermark() {
   });
   if (!result) return;
   workingCanvas = result;
-  ctx.commit(result, '消除水印');
+  ctx.commit(result, t('消除水印'));
+  lastDocImage = result; // 自己 commit 的結果：記住參照，之後重新 mount 才不會被誤判成外部換圖而整個重置
   ctx.showCompare(beforeSnapshot, result);
   boxes = [];
   refreshBoxList();
-  ctx.toast('已移除水印', 'success');
+  ctx.toast(t('已移除水印'), 'success');
 }
 
 const boxInteraction = {
@@ -297,16 +305,17 @@ async function performBrushErase(maskFloat) {
   const beforeSnapshot = cloneCanvas(workingCanvas);
   const baseCanvas = workingCanvas;
   const result = await ctx.runTask({
-    title: '消除中',
+    title: t('消除中'),
     async run({ signal, progress }) {
       return inpaint(baseCanvas, maskCanvas, { signal, onProgress: progress });
     },
   });
   if (!result) return;
   workingCanvas = result;
-  ctx.commit(result, '塗抹消除');
+  ctx.commit(result, t('塗抹消除'));
+  lastDocImage = result; // 同上：避免自己 commit 的結果被下一次 mount 誤判成外部換圖
   ctx.showCompare(beforeSnapshot, result);
-  ctx.toast('已消除', 'success');
+  ctx.toast(t('已消除'), 'success');
 }
 
 function drawStrokeOverlay(ctx2d, view) {
@@ -385,23 +394,24 @@ function currentInteraction() {
   return mode === 'box' ? boxInteraction : brushInteraction;
 }
 
-export default {
-  id: 'erase',
-  name: '消除圖',
-  icon,
-  needsImage: true,
-  mount(panelEl, c) {
+function mountPanel(panelEl, c) {
     ctx = c;
     panelEl.innerHTML = '';
-    workingCanvas = cloneCanvas(ctx.doc.getImage());
+    lastPanelEl = panelEl;
+    const img = ctx.doc.getImage();
+    // 同一張圖（參照相同）代表只是重新 mount（例如切換語言面板重畫），保留目前框選清單/模式/
+    // 筆刷設定；真的換了底圖（doc:change 來的新 canvas）才整個重置。
+    const sameImage = img === lastDocImage && workingCanvas != null;
+    lastDocImage = img;
+    workingCanvas = cloneCanvas(img);
     w = workingCanvas.width;
     h = workingCanvas.height;
-    resetState();
+    if (!sameImage) resetState();
 
     const modeGroup = ctx.ui.buttonGroup(
       [
-        { id: 'box', label: '框選水印' },
-        { id: 'brush', label: '塗抹消除' },
+        { id: 'box', label: t('框選水印') },
+        { id: 'brush', label: t('塗抹消除') },
       ],
       mode,
       (id) => {
@@ -425,48 +435,72 @@ export default {
         boxListEl = ctx.ui.el('div', 'ai-box-list');
         refreshBoxList();
 
-        const smartToggle = ctx.ui.toggle('智慧偵測文字/Logo（只遮住筆畫，覆蓋率過低/過高自動退回整框）', smartDetect, (v) => {
+        const smartToggle = ctx.ui.toggle(t('智慧偵測文字/Logo（只遮住筆畫，覆蓋率過低/過高自動退回整框）'), smartDetect, (v) => {
           smartDetect = v;
         });
 
-        const clearBtn = ctx.ui.button('清除全部框', () => {
+        const clearBtn = ctx.ui.button(t('清除全部框'), () => {
           boxes = [];
           refreshBoxList();
           ctx.viewport.requestRender();
         });
-        const removeBtn = ctx.ui.button('移除水印', () => removeWatermark(), { primary: true, block: true });
+        const removeBtn = ctx.ui.button(t('移除水印'), () => removeWatermark(), { primary: true, block: true });
 
         sectionsHost.appendChild(
-          ctx.ui.section('在畫布上拖曳畫出水印框', [boxListEl, clearBtn]),
+          ctx.ui.section(t('在畫布上拖曳畫出水印框'), [boxListEl, clearBtn]),
         );
-        sectionsHost.appendChild(ctx.ui.section('選項', [smartToggle]));
-        sectionsHost.appendChild(ctx.ui.section('執行', [removeBtn]));
+        sectionsHost.appendChild(ctx.ui.section(t('選項'), [smartToggle]));
+        sectionsHost.appendChild(ctx.ui.section(t('執行'), [removeBtn]));
       } else {
-        const brushSizeSlider = ctx.ui.slider('筆刷大小', 6, 200, 1, brushSize, (v) => {
+        const brushSizeSlider = ctx.ui.slider(t('筆刷大小'), 6, 200, 1, brushSize, (v) => {
           brushSize = v;
         });
         sectionsHost.appendChild(
-          ctx.ui.section('在畫布上塗抹要消除的區域', [
+          ctx.ui.section(t('在畫布上塗抹要消除的區域'), [
             brushSizeSlider,
-            ctx.ui.el('div', 'ai-hint', '放開滑鼠即自動執行消除，不需另外按按鈕'),
+            ctx.ui.el('div', 'ai-hint', t('放開滑鼠即自動執行消除，不需另外按按鈕')),
           ]),
         );
       }
     }
     refreshPanel();
 
-    panelEl.appendChild(ctx.ui.section('模式', [modeGroup]));
+    panelEl.appendChild(ctx.ui.section(t('模式'), [modeGroup]));
     panelEl.appendChild(sectionsHost);
-  },
+}
+
+// 復原／重做／重置前：還沒執行的框選清單／畫到一半的塗抹都對不上新的目前影像了，清掉並重畫面板。
+function handleHistoryNavigate(c) {
+  boxes = [];
+  drawingBox = null;
+  currentStrokeMask = null;
+  strokeBBox = null;
+  isStroking = false;
+  mouseImagePoint = null;
+  c.viewport.requestRender();
+  if (lastPanelEl) mountPanel(lastPanelEl, c);
+}
+
+export default {
+  id: 'erase',
+  name: '消除圖',
+  icon,
+  needsImage: true,
+  mount: mountPanel,
   activate(c) {
     ctx = c;
     ctx.viewport.setOverlay(overlay);
     ctx.viewport.setInteraction(currentInteraction());
+    unsubscribeHistoryNav = ctx.bus.on('history:navigate', () => handleHistoryNavigate(ctx));
   },
   deactivate(c) {
     ctx = c;
     ctx.viewport.setOverlay(null);
     ctx.viewport.setInteraction(null);
     ctx.preview(null);
+    if (unsubscribeHistoryNav) {
+      unsubscribeHistoryNav();
+      unsubscribeHistoryNav = null;
+    }
   },
 };

@@ -13,6 +13,7 @@ import {
 } from './adjust/geometry.js';
 import { SHAPE_OPTIONS, applyShapeMask } from './adjust/shapes.js';
 import { SIZE_PRESETS } from './adjust/presets.js';
+import { t } from '../core/i18n.js';
 
 const icon = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M4 7h10M4 12h16M4 17h7" stroke-width="2" stroke-linecap="round"/>
@@ -50,6 +51,7 @@ let rotateEdgeMode = 'crop'; // 'crop' | 'keep'
 let customSize = { w: 1080, h: 1080, lock: true, ratio: 1 };
 
 let mountedPanelEl = null;
+let historyHandlerRegistered = false;
 
 function clampNum(v, min, max) {
   return Math.min(max, Math.max(min, v));
@@ -90,6 +92,24 @@ function restoreCropOverlay(ctx) {
     },
   });
   ctx.viewport.requestRender();
+}
+
+// 復原/重做/重置：丟棄未套用的形狀蒙版/任意角度旋轉預覽，裁剪框重設到（navigate 後的）新影像尺寸。
+// 只在本工具目前是「已掛載」狀態才動作，避免搶走其他工具的 overlay/interaction。
+function ensureHistoryHandler(ctx) {
+  if (historyHandlerRegistered) return;
+  historyHandlerRegistered = true;
+  ctx.bus.on('history:navigate', () => {
+    if (!mountedPanelEl) return;
+    clearShapePreviewIfAny(ctx);
+    clearRotatePreviewIfAny(ctx);
+    cropDragState = null;
+    if (ctx.doc.hasImage()) {
+      resetCropToFull(ctx);
+    }
+    restoreCropOverlay(ctx);
+    mountPanel(ctx);
+  });
 }
 
 // ---------- 裁剪框：overlay 繪製 ----------
@@ -352,7 +372,7 @@ function cropApply(ctx) {
   resetCropToFull(ctx);
   restoreCropOverlay(ctx);
   mountPanel(ctx);
-  ctx.toast('已套用裁剪', 'success');
+  ctx.toast(t('已套用裁剪'), 'success');
 }
 
 function cropCancel(ctx) {
@@ -396,7 +416,7 @@ function applyShapeChoice(ctx) {
   resetCropToFull(ctx);
   restoreCropOverlay(ctx);
   mountPanel(ctx);
-  ctx.toast('已套用形狀蒙版', 'success');
+  ctx.toast(t('已套用形狀蒙版'), 'success');
 }
 
 // ---------- 旋轉翻轉 ----------
@@ -418,7 +438,7 @@ function onAngleInput(v, ctx) {
 
 function applyRotateSlider(ctx) {
   if (rotateAngle === 0) {
-    ctx.toast('角度為 0，無需套用', 'info');
+    ctx.toast(t('角度為 0，無需套用'), 'info');
     return;
   }
   const img = ctx.doc.getImage();
@@ -429,7 +449,7 @@ function applyRotateSlider(ctx) {
   resetCropToFull(ctx);
   restoreCropOverlay(ctx);
   mountPanel(ctx);
-  ctx.toast('已套用旋轉', 'success');
+  ctx.toast(t('已套用旋轉'), 'success');
 }
 
 function quickTransform(kind, ctx) {
@@ -464,17 +484,18 @@ function mountPanel(ctx) {
   panelEl.innerHTML = '';
 
   // 1. 裁剪
-  const ratioGroup = ctx.ui.buttonGroup(RATIO_OPTIONS, cropRatioId || '', (id) => applyRatioChoice(id, ctx));
+  const ratioOptionsTranslated = RATIO_OPTIONS.map((o) => ({ ...o, label: t(o.label) }));
+  const ratioGroup = ctx.ui.buttonGroup(ratioOptionsTranslated, cropRatioId || '', (id) => applyRatioChoice(id, ctx));
   const cropBtnRow = ctx.ui.el('div', 'adj-grid');
-  cropBtnRow.appendChild(ctx.ui.button('套用裁剪', () => cropApply(ctx), { primary: true }));
-  cropBtnRow.appendChild(ctx.ui.button('取消', () => cropCancel(ctx)));
-  panelEl.appendChild(ctx.ui.section('裁剪', [ratioGroup, cropBtnRow]));
+  cropBtnRow.appendChild(ctx.ui.button(t('套用裁剪'), () => cropApply(ctx), { primary: true }));
+  cropBtnRow.appendChild(ctx.ui.button(t('取消'), () => cropCancel(ctx)));
+  panelEl.appendChild(ctx.ui.section(t('裁剪'), [ratioGroup, cropBtnRow]));
 
   // 2. 常用尺寸
   const presetGrid = ctx.ui.el('div', 'adj-grid');
   for (const preset of SIZE_PRESETS) {
     presetGrid.appendChild(
-      ctx.ui.button(`${preset.label}\n${preset.w}×${preset.h}`, () => applyPresetChoice(preset, ctx)),
+      ctx.ui.button(`${t(preset.label)}\n${preset.w}×${preset.h}`, () => applyPresetChoice(preset, ctx)),
     );
   }
   const customRow1 = ctx.ui.el('div', 'adj-size-row');
@@ -504,50 +525,50 @@ function mountPanel(ctx) {
     }
     applyCustomSizeChoice(ctx);
   });
-  customRow1.appendChild(ctx.ui.el('span', 'ui-label', '寬'));
+  customRow1.appendChild(ctx.ui.el('span', 'ui-label', t('寬')));
   customRow1.appendChild(wInput);
-  customRow1.appendChild(ctx.ui.el('span', 'ui-label', '高'));
+  customRow1.appendChild(ctx.ui.el('span', 'ui-label', t('高')));
   customRow1.appendChild(hInput);
-  const lockToggle = ctx.ui.toggle('鎖定比例', customSize.lock, (checked) => {
+  const lockToggle = ctx.ui.toggle(t('鎖定比例'), customSize.lock, (checked) => {
     customSize.lock = checked;
     if (checked) customSize.ratio = customSize.w / customSize.h;
   });
-  const customApplyBtn = ctx.ui.button('套用尺寸（裁剪＋縮放）', () => cropApply(ctx), { block: true });
+  const customApplyBtn = ctx.ui.button(t('套用尺寸（裁剪＋縮放）'), () => cropApply(ctx), { block: true });
   panelEl.appendChild(
-    ctx.ui.section('常用尺寸', [presetGrid, customRow1, lockToggle, customApplyBtn]),
+    ctx.ui.section(t('常用尺寸'), [presetGrid, customRow1, lockToggle, customApplyBtn]),
   );
 
   // 3. 形狀蒙版
   const shapeGrid = ctx.ui.el('div', 'adj-grid');
   for (const shape of SHAPE_OPTIONS) {
-    const btn = ctx.ui.button(shape.label, () => selectShape(shape.id, ctx));
+    const btn = ctx.ui.button(t(shape.label), () => selectShape(shape.id, ctx));
     if (shapeSelected === shape.id) btn.classList.add('selected');
     shapeGrid.appendChild(btn);
   }
   const shapeChildren = [shapeGrid];
   if (shapeSelected === 'roundedRect') {
     shapeChildren.push(
-      ctx.ui.slider('圓角大小', 0, 50, 1, Math.round(shapeRoundness * 100), (v) => {
+      ctx.ui.slider(t('圓角大小'), 0, 50, 1, Math.round(shapeRoundness * 100), (v) => {
         shapeRoundness = v / 100;
         refreshShapePreview(ctx);
       }),
     );
   }
-  shapeChildren.push(ctx.ui.button('套用形狀', () => applyShapeChoice(ctx), { primary: true, block: true }));
-  panelEl.appendChild(ctx.ui.section('形狀蒙版', shapeChildren));
+  shapeChildren.push(ctx.ui.button(t('套用形狀'), () => applyShapeChoice(ctx), { primary: true, block: true }));
+  panelEl.appendChild(ctx.ui.section(t('形狀蒙版'), shapeChildren));
 
   // 4. 旋轉翻轉
   const quickRow = ctx.ui.el('div', 'adj-grid');
-  quickRow.appendChild(ctx.ui.button('向左 90°', () => quickTransform('left', ctx)));
-  quickRow.appendChild(ctx.ui.button('向右 90°', () => quickTransform('right', ctx)));
-  quickRow.appendChild(ctx.ui.button('水平翻轉', () => quickTransform('fliph', ctx)));
-  quickRow.appendChild(ctx.ui.button('垂直翻轉', () => quickTransform('flipv', ctx)));
+  quickRow.appendChild(ctx.ui.button(t('向左 90°'), () => quickTransform('left', ctx)));
+  quickRow.appendChild(ctx.ui.button(t('向右 90°'), () => quickTransform('right', ctx)));
+  quickRow.appendChild(ctx.ui.button(t('水平翻轉'), () => quickTransform('fliph', ctx)));
+  quickRow.appendChild(ctx.ui.button(t('垂直翻轉'), () => quickTransform('flipv', ctx)));
 
-  const angleSlider = ctx.ui.slider('任意角度', -45, 45, 1, rotateAngle, (v) => onAngleInput(v, ctx));
+  const angleSlider = ctx.ui.slider(t('任意角度'), -45, 45, 1, rotateAngle, (v) => onAngleInput(v, ctx));
   const edgeModeGroup = ctx.ui.buttonGroup(
     [
-      { id: 'crop', label: '自動裁掉黑邊' },
-      { id: 'keep', label: '保留透明' },
+      { id: 'crop', label: t('自動裁掉黑邊') },
+      { id: 'keep', label: t('保留透明') },
     ],
     rotateEdgeMode,
     (id) => {
@@ -555,15 +576,15 @@ function mountPanel(ctx) {
       if (rotateAngle !== 0) onAngleInput(rotateAngle, ctx);
     },
   );
-  const rotateApplyBtn = ctx.ui.button('套用旋轉', () => applyRotateSlider(ctx), { primary: true, block: true });
+  const rotateApplyBtn = ctx.ui.button(t('套用旋轉'), () => applyRotateSlider(ctx), { primary: true, block: true });
 
   panelEl.appendChild(
-    ctx.ui.section('旋轉翻轉', [
+    ctx.ui.section(t('旋轉翻轉'), [
       quickRow,
       angleSlider,
       edgeModeGroup,
       rotateApplyBtn,
-      ctx.ui.el('div', 'adj-help-text', '拖曳滑桿可即時預覽旋轉結果，按「套用旋轉」才會真正寫入影像。'),
+      ctx.ui.el('div', 'adj-help-text', t('拖曳滑桿可即時預覽旋轉結果，按「套用旋轉」才會真正寫入影像。')),
     ]),
   );
 }
@@ -575,6 +596,7 @@ export default {
   needsImage: true,
   mount(panelEl, ctx) {
     mountedPanelEl = panelEl;
+    ensureHistoryHandler(ctx);
     mountPanel(ctx);
   },
   activate(ctx) {

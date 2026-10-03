@@ -5,6 +5,7 @@
 import { getSession, getOrt } from './ort.js';
 import { createCanvas } from '../core/canvasUtil.js';
 import { checkAborted, makeAbortError } from './util.js';
+import { t } from '../core/i18n.js';
 
 const INPUT_SIZE = 320;
 const MEAN = [0.485, 0.456, 0.406];
@@ -14,7 +15,7 @@ export async function predictAlpha(srcCanvas, { model = 'u2netp', signal, onProg
   const w = srcCanvas.width;
   const h = srcCanvas.height;
 
-  onProgress && onProgress(0, '準備模型');
+  onProgress && onProgress(0, t('準備模型'));
   const session = await getSession(model, {
     signal,
     onProgress: (p, text) => onProgress && onProgress(p * 0.55, text),
@@ -52,7 +53,7 @@ export async function predictAlpha(srcCanvas, { model = 'u2netp', signal, onProg
   }
 
   checkAborted(signal);
-  onProgress && onProgress(0.6, '推論中');
+  onProgress && onProgress(0.6, t('推論中'));
 
   const inputName = session.inputNames[0];
   const inputTensor = new ort.Tensor('float32', chw, [1, 3, INPUT_SIZE, INPUT_SIZE]);
@@ -66,7 +67,7 @@ export async function predictAlpha(srcCanvas, { model = 'u2netp', signal, onProg
     throw err;
   }
   checkAborted(signal);
-  onProgress && onProgress(0.85, '後處理中');
+  onProgress && onProgress(0.85, t('後處理中'));
 
   const outName = session.outputNames[0];
   const outData = outputs[outName].data; // Float32Array，長度 320*320（單通道）
@@ -108,6 +109,6 @@ export async function predictAlpha(srcCanvas, { model = 'u2netp', signal, onProg
   const alpha = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) alpha[i] = bigData[i * 4] / 255;
 
-  onProgress && onProgress(1, '完成');
+  onProgress && onProgress(1, t('完成'));
   return alpha;
 }

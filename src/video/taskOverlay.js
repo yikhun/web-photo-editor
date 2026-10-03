@@ -2,6 +2,8 @@
 // 為什麼不用 ctx.runTask：core/task.js 的遮罩是掛在 #stage-wrap（屬於 #main-body），
 // 而 #/video 路由會把 #main-body 整個 display:none，使用者在影片頁完全看不到那個遮罩。
 // 因此另外做一份行為對等（進度、取消、例外 toast、busy 鎖）的遮罩，掛在影片工作區自己的容器內。
+import { t } from '../core/i18n.js';
+
 export function createVideoTask({ containerEl, toast }) {
   let busy = false;
 
@@ -12,7 +14,7 @@ export function createVideoTask({ containerEl, toast }) {
     <div class="vw-task-bar-track"><div class="vw-task-bar-fill"></div></div>
     <div class="vw-task-percent">0%</div>
     <div class="vw-task-desc"></div>
-    <button class="ui-button" type="button">取消</button>
+    <button class="ui-button" type="button"></button>
   `;
   containerEl.appendChild(overlay);
 
@@ -22,14 +24,16 @@ export function createVideoTask({ containerEl, toast }) {
   const descEl = overlay.querySelector('.vw-task-desc');
   const cancelBtn = overlay.querySelector('button');
 
-  async function run({ title = '處理中', run: runFn }) {
+  async function run({ title, run: runFn }) {
     if (busy) {
-      toast('已有任務執行中，請稍候', 'error');
+      toast(t('已有任務執行中，請稍候'), 'error');
       return null;
     }
     busy = true;
     const controller = new AbortController();
-    titleEl.textContent = title;
+    // 顯示當下才 t()，確保用的是開始執行這一刻的語系
+    titleEl.textContent = title != null ? title : t('處理中');
+    cancelBtn.textContent = t('取消');
     barFillEl.style.width = '0%';
     percentEl.textContent = '0%';
     descEl.textContent = '';
@@ -54,7 +58,7 @@ export function createVideoTask({ containerEl, toast }) {
         result = null;
       } else {
         console.error('[video-task] 執行失敗', err);
-        toast(`執行失敗：${err && err.message ? err.message : err}`, 'error');
+        toast(t('執行失敗：{msg}', { msg: err && err.message ? err.message : err }), 'error');
         result = null;
       }
     } finally {

@@ -16,7 +16,7 @@ npm run dev            # http://localhost:5173
 
 | 功能 | 模型 | 檔案 |
 |---|---|---|
-| 摳圖 | U²-Net / U²-Netp（rembg，MIT） | u2net.onnx、u2netp.onnx |
+| 去背 | U²-Net / U²-Netp（rembg，MIT） | u2net.onnx、u2netp.onnx |
 | 消除圖、影片去水印 | MI-GAN（MIT） | migan.onnx（mask：0＝要補，255＝保留，在 src/ai/migan.js 內轉換） |
 | 變清晰：Real-ESRGAN 快速 | realesr-general-x4v3（BSD-3） | realesr-general-x4v3-static384.onnx |
 | 變清晰：Upscayl 標準、數位藝術 | 由 Upscayl 官方 ncnn 檔轉成 ONNX（`_research/upscayl/ncnn2onnx.py`） | upscayl-*-4x-128.onnx |
@@ -28,7 +28,7 @@ Upscayl 兩個模型轉檔後，和官方 RealESRGAN_x4plus、x4plus_anime_6B �
 - 影片 AI 處理是逐格運算，速度慢。這台機器（Intel Arc 內顯）實測，320×240 影片放大 2 倍約每格 3.6 秒，瓶頸在 onnxruntime-web WebGPU 的 `session.run()`。之後的改善方向是 IO binding 加 `enableGraphCapture`。
 - Upscayl 模型第一次執行要編譯 WebGPU shader，400×300 放大 4 倍約 50～70 秒，之後會比較快。
 - 如果沒有執行 `fetch-models`，MI-GAN 與 Real-ESRGAN 會改從 Hugging Face 下載模型（只下載模型，不送出圖片），U²-Net 和 Upscayl 則一定要放在本機。
-- 「影片工具」頁和左側「影片摳圖」各自保留一份工作區狀態，切換分頁或工具時不會釋放。
+- 「影片工具」頁和左側「影片去背」各自保留一份工作區狀態，切換分頁或工具時不會釋放。
 
 ## 部署到 GitHub Pages
 

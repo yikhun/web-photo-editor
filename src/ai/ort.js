@@ -12,6 +12,7 @@
 // 因此採用做法 2；public/ort/ 保留做為「若未來改回手動指定路徑」的備用檔案，目前程式不會用到。
 import { getModel } from './models.js';
 import { makeAbortError } from './util.js';
+import { t } from '../core/i18n.js';
 
 let ortPromise = null;
 let backend = null;
@@ -46,7 +47,7 @@ export function getBackend() {
 // getSession(key, { signal, onProgress }) -> Promise<ort.InferenceSession>
 export async function getSession(key, { signal, onProgress } = {}) {
   if (sessionCache.has(key)) {
-    if (onProgress) onProgress(1, '使用已快取的推論引擎');
+    if (onProgress) onProgress(1, t('使用已快取的推論引擎'));
     return sessionCache.get(key);
   }
 
@@ -58,7 +59,7 @@ export async function getSession(key, { signal, onProgress } = {}) {
   if (signal && signal.aborted) throw makeAbortError();
 
   const bytes = new Uint8Array(buffer);
-  onProgress && onProgress(0.72, '建立推論 session');
+  onProgress && onProgress(0.72, t('建立推論 session'));
 
   let session;
   try {
@@ -72,6 +73,6 @@ export async function getSession(key, { signal, onProgress } = {}) {
 
   if (typeof window !== 'undefined') window.__peBackend = backend;
   sessionCache.set(key, session);
-  onProgress && onProgress(1, `推論引擎：${backend}`);
+  onProgress && onProgress(1, t('推論引擎：{backend}', { backend }));
   return session;
 }

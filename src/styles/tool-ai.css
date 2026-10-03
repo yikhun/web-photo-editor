@@ -1,4 +1,4 @@
-/* 摳圖／消除圖工具面板專用樣式（吃 main.css 的 CSS 變數，不另定義顏色）*/
+/* 去背／消除圖工具面板專用樣式（吃 main.css 的 CSS 變數，不另定義顏色）*/
 
 .ai-box-list {
   display: flex;

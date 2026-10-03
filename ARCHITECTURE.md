@@ -41,7 +41,7 @@ src/video/...               影片工具頁與管線
 │72px│               │                                                         │
 └────┴──────────────┴─────────────────────────────────────────────────────────┘
 ```
-左側工具順序固定：新增 add、調整 adjust、文字 text、消除圖 erase、摳圖 matting、變清晰 enhance、調色 color、影片摳圖 videoMatting。
+左側工具順序固定：新增 add、調整 adjust、文字 text、消除圖 erase、去背 matting、變清晰 enhance、調色 color、影片去背 videoMatting。
 「影片工具」分頁（#/video）整頁換成影片工作區：左欄是 去水印 / 去背 / 放大 三個模式。
 
 ## 工具模組合約（src/tools/<id>.js）
@@ -84,7 +84,16 @@ ctx.toast(msg, type = 'info'|'success'|'error')
 ctx.ui                                    // src/core/ui.js 的元件工廠
 ctx.setTool(id)                           // 程式切換工具
 ```
-事件：`doc:change`、`doc:load`、`tool:change`、`history:change`。
+事件：`doc:change`、`doc:load`、`tool:change`、`history:change`、`history:navigate`。
+
+`history:navigate`（payload `{ action: 'undo'|'redo'|'reset' }`）：doc.js 的 undo/redo/reset
+在 history 游標已指向新影像、但 `doc:change` 尚未送出前先 emit 這個事件——此時
+`ctx.doc.getImage()` 已回傳 navigate 後的新影像。main.js 監聽它統一做
+`viewport.preview(null)` 與關閉對比線（compare.closeCompare()），避免復原/重做/重置時
+畫面卡著舊的暫時預覽或對比線看起來「沒反應」。**工具收到這個事件時要丟棄未套用的預覽與
+暫存狀態**：例如 adjust 工具會清掉未套用的形狀蒙版/旋轉預覽、把裁剪框重設到新影像尺寸；
+text 工具的未套用文字物件是 overlay（非 ctx.preview 預覽），不會被清空，但要把座標夾回新
+影像範圍內。新增工具若也有「未套用即棄」性質的暫存預覽，應比照監聽此事件處理。
 
 ## 共通行為
 - 復原／重做：Ctrl+Z / Ctrl+Y（Ctrl+Shift+Z）與頂部按鈕；重置 = 回到原圖（本身也是一筆歷史，可再復原）。
@@ -116,7 +125,7 @@ upscale(canvas, { model: 'realesrgan-fast'|'upscayl-standard'|'upscayl-digital-a
 - `pipeline.js`：用 mediabunny 讀 MP4/WebM，逐格交給 `processFrame(canvas, index, time) -> canvas`，再編碼輸出；保留音軌；
   支援進度與取消；透明輸出用 WebM + alpha。
 - `workspace.js`：`createVideoWorkspace(container, { mode: 'watermark'|'matting'|'upscale', ctx })`，
-  影片工具頁三個模式與左側「影片摳圖」工具共用。
+  影片工具頁三個模式與左側「影片去背」工具共用。
 - 影片放大輸出上限 4K（長邊 3840）。
 
 ## 程式風格

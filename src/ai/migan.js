@@ -15,6 +15,7 @@
 import { getSession, getOrt } from './ort.js';
 import { createCanvas, cloneCanvas } from '../core/canvasUtil.js';
 import { checkAborted, makeAbortError, blurGrayFloat } from './util.js';
+import { t } from '../core/i18n.js';
 
 // 模型輸入其實是動態尺寸（見 _research/models/models.md §2.2：graph 顯示 H/W 皆為動態維度，
 // 不要求固定 512×512；之前版本把每個 ROI 都強制縮成 512×512 正方形，結果對「大範圍、低對比」的
@@ -124,11 +125,11 @@ export async function inpaint(imageCanvas, maskCanvas, { signal, onProgress } = 
   const bbox = findMaskBBox(maskCanvas);
   if (!bbox) {
     // 沒有要修補的區域，原圖原樣回傳
-    onProgress && onProgress(1, '沒有遮罩，略過');
+    onProgress && onProgress(1, t('沒有遮罩，略過'));
     return cloneCanvas(imageCanvas);
   }
 
-  onProgress && onProgress(0, '準備模型');
+  onProgress && onProgress(0, t('準備模型'));
   const session = await getSession('migan', {
     signal,
     onProgress: (p, text) => onProgress && onProgress(p * 0.4, text),
@@ -163,7 +164,7 @@ export async function inpaint(imageCanvas, maskCanvas, { signal, onProgress } = 
   const maskData8 = maskCanvasToUint8(modelMask);
 
   checkAborted(signal);
-  onProgress && onProgress(0.45, '推論中');
+  onProgress && onProgress(0.45, t('推論中'));
 
   const imageTensor = new ort.Tensor('uint8', imageData8, [1, 3, mh, mw]);
   const maskTensor = new ort.Tensor('uint8', maskData8, [1, 1, mh, mw]);
@@ -180,7 +181,7 @@ export async function inpaint(imageCanvas, maskCanvas, { signal, onProgress } = 
     throw err;
   }
   checkAborted(signal);
-  onProgress && onProgress(0.8, '後處理中');
+  onProgress && onProgress(0.8, t('後處理中'));
 
   const outName = session.outputNames[0];
   const outTensor = outputs[outName];
@@ -242,6 +243,6 @@ export async function inpaint(imageCanvas, maskCanvas, { signal, onProgress } = 
   const out = cloneCanvas(imageCanvas);
   out.getContext('2d').drawImage(blendedCanvas, roi.x, roi.y);
 
-  onProgress && onProgress(1, '完成');
+  onProgress && onProgress(1, t('完成'));
   return out;
 }

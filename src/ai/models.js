@@ -1,6 +1,7 @@
 // 模型註冊表、下載（進度、Cache Storage 'pe-models-v1' 快取、可取消）。
 // 查證依據：_research/models/models.md（URL、CORS、大小皆已於 2026-10-03 實測）。
 import { makeAbortError } from './util.js';
+import { t } from '../core/i18n.js';
 
 const CACHE_NAME = 'pe-models-v1';
 
@@ -89,13 +90,16 @@ async function fetchPartsWithProgress(baseUrl, parts, { signal, onProgress }) {
     if (signal && signal.aborted) throw makeAbortError();
     const url = `${baseUrl}.${list[i].suffix}`;
     const res = await fetch(url, { signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}（${url}）`);
+    if (!res.ok) throw new Error(t('HTTP {status}（{url}）', { status: res.status, url }));
     const buf = await res.arrayBuffer();
     buffers.push(buf);
     receivedTotal += buf.byteLength;
     if (onProgress) {
       const pct = totalKnown ? Math.min(1, receivedTotal / totalKnown) : (i + 1) / list.length;
-      onProgress(pct, `下載模型中 ${Math.round(pct * 100)}%（分段 ${i + 1}/${list.length}）`);
+      onProgress(
+        pct,
+        t('下載模型中 {pct}%（分段 {i}/{n}）', { pct: Math.round(pct * 100), i: i + 1, n: list.length }),
+      );
     }
   }
   const out = new Uint8Array(receivedTotal);
@@ -109,11 +113,11 @@ async function fetchPartsWithProgress(baseUrl, parts, { signal, onProgress }) {
 
 async function fetchWithProgress(url, knownSize, { signal, onProgress }) {
   const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`HTTP ${res.status}（${url}）`);
+  if (!res.ok) throw new Error(t('HTTP {status}（{url}）', { status: res.status, url }));
   const total = Number(res.headers.get('content-length')) || knownSize || 0;
   if (!res.body || typeof res.body.getReader !== 'function') {
     const buf = await res.arrayBuffer();
-    if (onProgress) onProgress(1, '下載完成');
+    if (onProgress) onProgress(1, t('下載完成'));
     return buf;
   }
   const reader = res.body.getReader();
@@ -126,7 +130,10 @@ async function fetchWithProgress(url, knownSize, { signal, onProgress }) {
     received += value.length;
     if (onProgress) {
       const pct = total ? Math.min(1, received / total) : 0;
-      onProgress(pct, `下載模型中 ${total ? Math.round(pct * 100) + '%' : Math.round(received / 1e6) + 'MB'}`);
+      onProgress(
+        pct,
+        t('下載模型中 {amount}', { amount: total ? `${Math.round(pct * 100)}%` : `${Math.round(received / 1e6)}MB` }),
+      );
     }
   }
   const out = new Uint8Array(received);
@@ -141,19 +148,19 @@ async function fetchWithProgress(url, knownSize, { signal, onProgress }) {
 // getModel(key, { signal, onProgress }) -> Promise<ArrayBuffer>
 export async function getModel(key, { signal, onProgress } = {}) {
   const entry = MODELS[key];
-  if (!entry) throw new Error(`未知模型 key: ${key}`);
+  if (!entry) throw new Error(t('未知模型 key: {key}', { key }));
 
   const cache = await openCache();
   if (cache) {
     const cached = await cache.match(cacheKeyFor(key));
     if (cached) {
-      if (onProgress) onProgress(1, '已使用本機快取模型');
+      if (onProgress) onProgress(1, t('已使用本機快取模型'));
       return cached.arrayBuffer();
     }
   }
 
   const candidates = [entry.url, entry.fallbackUrl].filter(Boolean);
-  if (candidates.length === 0) throw new Error(`模型 ${key} 尚未提供下載來源`);
+  if (candidates.length === 0) throw new Error(t('模型 {key} 尚未提供下載來源', { key }));
 
   const manifest = await loadManifest();
   const fileName = entry.url.split('/').pop();
@@ -181,7 +188,7 @@ export async function getModel(key, { signal, onProgress } = {}) {
       console.warn(`[models] 下載 ${key} 失敗（${url}），嘗試下一個來源`, err);
     }
   }
-  throw lastErr || new Error(`模型 ${key} 下載失敗`);
+  throw lastErr || new Error(t('模型 {key} 下載失敗', { key }));
 }
 
 export function getModelEntry(key) {

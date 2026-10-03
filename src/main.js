@@ -7,6 +7,7 @@ import { createTask } from './core/task.js';
 import { createExportMenu } from './core/export.js';
 import * as ui from './core/ui.js';
 import { toast } from './core/ui.js';
+import { t, getLang, setLang, onLangChange } from './core/i18n.js';
 import tools from './tools/index.js';
 
 const app = document.getElementById('app');
@@ -15,12 +16,12 @@ const app = document.getElementById('app');
 const topbar = ui.el('div');
 topbar.id = 'topbar';
 
-const logo = ui.el('div', 'topbar-logo', '線上修圖');
+const logo = ui.el('div', 'topbar-logo', t('線上修圖'));
 
 const tabs = ui.el('div', 'topbar-tabs');
-const tabImage = ui.el('button', 'topbar-tab active', '圖片編輯');
+const tabImage = ui.el('button', 'topbar-tab active', t('圖片編輯'));
 tabImage.type = 'button';
-const tabVideo = ui.el('button', 'topbar-tab', '影片工具');
+const tabVideo = ui.el('button', 'topbar-tab', t('影片工具'));
 tabVideo.type = 'button';
 tabs.appendChild(tabImage);
 tabs.appendChild(tabVideo);
@@ -30,24 +31,37 @@ function sep() {
 }
 
 const historyGroup = ui.el('div', 'topbar-group');
-const undoBtn = ui.button('復原', () => doc.undo());
-const redoBtn = ui.button('重做', () => doc.redo());
-const resetBtn = ui.button('重置', () => doc.reset());
+const undoBtn = ui.button(t('復原'), () => doc.undo());
+const redoBtn = ui.button(t('重做'), () => doc.redo());
+const resetBtn = ui.button(t('重置'), () => doc.reset());
 historyGroup.appendChild(undoBtn);
 historyGroup.appendChild(redoBtn);
 historyGroup.appendChild(resetBtn);
 
 const compareGroup = ui.el('div', 'topbar-group');
-const compareBtn = ui.button('按住對比', null);
+const compareBtn = ui.button(t('按住對比'), null);
 compareGroup.appendChild(compareBtn);
 
 const zoomGroup = ui.el('div', 'topbar-group');
 const zoomLabel = ui.el('span', 'topbar-zoom', '100%');
-const fitBtn = ui.button('適合畫面', () => viewport.fit());
+const fitBtn = ui.button(t('適合畫面'), () => viewport.fit());
 zoomGroup.appendChild(zoomLabel);
 zoomGroup.appendChild(fitBtn);
 
 const spacer = ui.el('div', 'topbar-spacer');
+
+// ---------- 語言切換（中 / EN）----------
+const langGroup = ui.el('div', 'topbar-group');
+const langBtnZh = ui.button('中', () => setLang('zh-TW'));
+const langBtnEn = ui.button('EN', () => setLang('en'));
+langGroup.appendChild(langBtnZh);
+langGroup.appendChild(langBtnEn);
+function refreshLangButtons() {
+  const lang = getLang();
+  langBtnZh.classList.toggle('primary', lang === 'zh-TW');
+  langBtnEn.classList.toggle('primary', lang === 'en');
+}
+refreshLangButtons();
 
 topbar.appendChild(logo);
 topbar.appendChild(tabs);
@@ -58,7 +72,7 @@ topbar.appendChild(compareGroup);
 topbar.appendChild(sep());
 topbar.appendChild(zoomGroup);
 topbar.appendChild(spacer);
-// 匯出選單稍後掛上（需要 doc/bus）
+// 匯出選單稍後掛上（需要 doc/bus），語言切換鈕掛在匯出旁邊（最右）
 
 const mainBody = ui.el('div');
 mainBody.id = 'main-body';
@@ -91,6 +105,7 @@ compare.bindHoldButton(compareBtn);
 const task = createTask({ stageWrapEl: stageWrap, toast });
 const exportMenu = createExportMenu({ doc, bus, toast });
 topbar.appendChild(exportMenu.el);
+topbar.appendChild(langGroup);
 
 // ---------- ctx（傳給每個工具）----------
 const ctx = {
@@ -128,7 +143,7 @@ function renderSidebar() {
     const iconWrap = ui.el('span');
     iconWrap.innerHTML = tool.icon || '';
     btn.appendChild(iconWrap);
-    btn.appendChild(ui.el('span', 'tool-btn-label', tool.name));
+    btn.appendChild(ui.el('span', 'tool-btn-label', t(tool.name)));
     btn.addEventListener('click', () => setTool(tool.id));
     btn.dataset.id = tool.id;
     sidebar.appendChild(btn);
@@ -144,18 +159,18 @@ function updateSidebarActive() {
 
 function renderNeedsImageHint() {
   panel.innerHTML = '';
-  const hint = ui.el('div', 'ui-empty-hint', '請先新增圖片');
-  const goAddBtn = ui.button('前往「新增」', () => setTool('add'), { primary: true });
+  const hint = ui.el('div', 'ui-empty-hint', t('請先新增圖片'));
+  const goAddBtn = ui.button(t('前往「新增」'), () => setTool('add'), { primary: true });
   hint.appendChild(goAddBtn);
   panel.appendChild(hint);
 }
 
 function setTool(id) {
-  const tool = tools.find((t) => t.id === id);
+  const tool = tools.find((tl) => tl.id === id);
   if (!tool) return;
 
   if (currentToolId) {
-    const prevTool = tools.find((t) => t.id === currentToolId);
+    const prevTool = tools.find((tl) => tl.id === currentToolId);
     if (prevTool && prevTool.deactivate) {
       try {
         prevTool.deactivate(ctx);
@@ -193,7 +208,7 @@ function setTool(id) {
 
 // 圖片載入後，若目前工具因無圖而顯示提示，重新 mount 真正面板；並自動切到「調整」工具（由 add 工具呼叫 ctx.setTool）
 bus.on('doc:load', () => {
-  const tool = tools.find((t) => t.id === currentToolId);
+  const tool = tools.find((tl) => tl.id === currentToolId);
   if (tool && tool.needsImage) {
     setTool(currentToolId);
   }
@@ -206,9 +221,19 @@ setTool(tools[0].id);
 function refreshHistoryButtons() {
   undoBtn.disabled = !doc.canUndo();
   redoBtn.disabled = !doc.canRedo();
+  resetBtn.disabled = !doc.hasImage();
 }
 bus.on('history:change', refreshHistoryButtons);
 refreshHistoryButtons();
+
+// ---------- 復原/重做/重置：丟棄未套用的預覽與對比線 ----------
+// doc.js 的 undo/redo/reset 會在 history 游標已指向新影像、但 'doc:change' 尚未送出前
+// 先 emit 'history:navigate'；這裡統一清掉 viewport 的暫時預覽與對比線，
+// 各工具（adjust/text）另外各自監聽此事件清自己的暫存狀態（見 ARCHITECTURE.md 事件清單）。
+bus.on('history:navigate', () => {
+  viewport.preview(null);
+  compare.closeCompare();
+});
 
 // ---------- 縮放顯示 ----------
 bus.on('viewport:zoom', ({ scale }) => {
@@ -277,7 +302,7 @@ async function showVideoRoute() {
       videoWorkspaceHandle = mod.createVideoWorkspace(videoRoot, { mode: 'watermark', ctx });
     } catch (err) {
       console.error('[main] 載入影片工作區失敗', err);
-      videoRoot.innerHTML = '<div class="ui-empty-hint">影片工具建置中</div>';
+      videoRoot.innerHTML = `<div class="ui-empty-hint">${t('影片工具建置中')}</div>`;
     }
   }
 }
@@ -311,3 +336,26 @@ window.addEventListener('hashchange', routeFromHash);
 routeFromHash();
 
 viewport.requestRender();
+
+// ---------- 語系切換：重畫頂部工具列、左側工具欄、分頁文字、目前工具面板 ----------
+function updateDocumentTitle() {
+  document.title = t('線上修圖 — 純瀏覽器影像編輯');
+}
+
+onLangChange(() => {
+  logo.textContent = t('線上修圖');
+  tabImage.textContent = t('圖片編輯');
+  tabVideo.textContent = t('影片工具');
+  undoBtn.textContent = t('復原');
+  redoBtn.textContent = t('重做');
+  resetBtn.textContent = t('重置');
+  compareBtn.textContent = t('按住對比');
+  fitBtn.textContent = t('適合畫面');
+  refreshLangButtons();
+  updateDocumentTitle();
+
+  renderSidebar();
+  if (currentToolId) setTool(currentToolId);
+});
+
+updateDocumentTitle();

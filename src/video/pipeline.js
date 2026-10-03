@@ -19,6 +19,7 @@ import {
   QUALITY_HIGH,
 } from 'mediabunny';
 import { makeAbortError, checkAborted } from '../ai/util.js';
+import { t } from '../core/i18n.js';
 
 const MP4_VIDEO_CANDIDATES = ['avc', 'hevc'];
 const WEBM_VIDEO_CANDIDATES = ['vp9', 'vp8'];
@@ -30,7 +31,7 @@ export async function readVideoInfo(file) {
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const videoTrack = await input.getPrimaryVideoTrack();
   if (!videoTrack) {
-    throw new Error('找不到視訊軌，請確認檔案是有效的 MP4 或 WebM 影片');
+    throw new Error(t('找不到視訊軌，請確認檔案是有效的 MP4 或 WebM 影片'));
   }
   const audioTrack = await input.getPrimaryAudioTrack();
   const [duration, width, height, metrics, canBeTransparent] = await Promise.all([
@@ -88,7 +89,10 @@ export async function pickOutputCodecs({ container, hasAudio, width, height, fps
   if (!videoCodec) {
     return {
       ok: false,
-      reason: `此瀏覽器缺少 WebCodecs 或不支援輸出 ${container.toUpperCase()} 所需的視訊編碼（${videoCandidates.join('/')}）`,
+      reason: t('此瀏覽器缺少 WebCodecs 或不支援輸出 {container} 所需的視訊編碼（{codecs}）', {
+        container: container.toUpperCase(),
+        codecs: videoCandidates.join('/'),
+      }),
     };
   }
   let audioCodec = null;
@@ -97,7 +101,10 @@ export async function pickOutputCodecs({ container, hasAudio, width, height, fps
     if (!audioCodec) {
       return {
         ok: false,
-        reason: `此瀏覽器不支援輸出 ${container.toUpperCase()} 所需的音訊編碼（${audioCandidates.join('/')}）`,
+        reason: t('此瀏覽器不支援輸出 {container} 所需的音訊編碼（{codecs}）', {
+          container: container.toUpperCase(),
+          codecs: audioCandidates.join('/'),
+        }),
       };
     }
   }
@@ -159,8 +166,8 @@ export async function runPipeline({
   });
 
   if (!conversion.isValid) {
-    const reasons = (conversion.discardedTracks || []).map((t) => t.reason || '').filter(Boolean).join('; ');
-    throw new Error(`轉檔設定不相容${reasons ? '：' + reasons : ''}`);
+    const reasons = (conversion.discardedTracks || []).map((tr) => tr.reason || '').filter(Boolean).join('; ');
+    throw new Error(reasons ? t('轉檔設定不相容：{reasons}', { reasons }) : t('轉檔設定不相容'));
   }
 
   conversion.onProgress = (p) => {

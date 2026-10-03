@@ -1,6 +1,7 @@
 // 新增工具：上傳圖片（按鈕／拖曳／貼上）、或產生範例測試圖。
 // 載入後自動 doc.load、fit 畫面、切到「調整」工具。拖曳與貼上由 main.js 全域監聽，呼叫 handleIncomingFiles。
 import { loadImageFromFile, createCanvas } from '../core/canvasUtil.js';
+import { t } from '../core/i18n.js';
 
 const icon = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M12 5v14M5 12h14" stroke-width="2" stroke-linecap="round"/>
@@ -12,13 +13,13 @@ export async function handleIncomingFiles(fileOrFiles, ctx) {
   if (!file) return;
   try {
     const canvas = await loadImageFromFile(file);
-    ctx.doc.load(canvas, file.name || '未命名.png');
+    ctx.doc.load(canvas, file.name || `${t('未命名')}.png`);
     ctx.viewport.requestRender();
     ctx.setTool('adjust');
-    ctx.toast('圖片已載入', 'success');
+    ctx.toast(t('圖片已載入'), 'success');
   } catch (err) {
     console.error('[add] 載入圖片失敗', err);
-    ctx.toast('載入圖片失敗', 'error');
+    ctx.toast(t('載入圖片失敗'), 'error');
   }
 }
 
@@ -69,7 +70,7 @@ function makeSampleImage() {
   g.textAlign = 'center';
   g.shadowColor = 'rgba(0,0,0,0.35)';
   g.shadowBlur = 8;
-  g.fillText('範例測試圖 1200×800', w / 2, h - 90);
+  g.fillText(t('範例測試圖 1200×800'), w / 2, h - 90);
 
   return canvas;
 }
@@ -83,7 +84,7 @@ export default {
     panelEl.innerHTML = '';
 
     const uploadBtn = ctx.ui.button(
-      '上傳圖片',
+      t('上傳圖片'),
       () => {
         const input = document.createElement('input');
         input.type = 'file';
@@ -99,7 +100,7 @@ export default {
     const dropzone = ctx.ui.el(
       'div',
       'ui-dropzone',
-      '將圖片拖曳到此處\n也可直接 Ctrl+V 貼上圖片',
+      t('將圖片拖曳到此處\n也可直接 Ctrl+V 貼上圖片'),
     );
     dropzone.style.whiteSpace = 'pre-line';
     dropzone.addEventListener('dragover', (e) => {
@@ -116,22 +117,22 @@ export default {
     });
 
     const sampleBtn = ctx.ui.button(
-      '範例圖片',
+      t('範例圖片'),
       () => {
         const canvas = makeSampleImage();
-        ctx.doc.load(canvas, '範例圖片.png');
+        ctx.doc.load(canvas, `${t('範例圖片')}.png`);
         ctx.viewport.requestRender();
         ctx.setTool('adjust');
-        ctx.toast('已載入範例圖片', 'success');
+        ctx.toast(t('已載入範例圖片'), 'success');
       },
       { block: true },
     );
 
     panelEl.appendChild(
-      ctx.ui.section('新增圖片', [uploadBtn, dropzone]),
+      ctx.ui.section(t('新增圖片'), [uploadBtn, dropzone]),
     );
     panelEl.appendChild(
-      ctx.ui.section('測試用', [sampleBtn]),
+      ctx.ui.section(t('測試用'), [sampleBtn]),
     );
   },
   activate() {},

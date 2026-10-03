@@ -1,6 +1,7 @@
 // 匯出 PNG/JPG/WebP：頂部「匯出」下拉，JPG/WebP 可調品質，檔名 <原檔名>-edited.<ext>。
 // 匯出前 emit 'export:before'（emitAsync，讓文字工具合併文字層）。
 import { canvasToBlob } from './canvasUtil.js';
+import { t, onLangChange } from './i18n.js';
 
 const FORMATS = [
   { id: 'png', label: 'PNG', mime: 'image/png', quality: false },
@@ -21,29 +22,40 @@ export function createExportMenu({ doc, bus, toast }) {
   const root = document.createElement('div');
   root.className = 'export-dropdown';
   root.innerHTML = `
-    <button type="button" class="ui-button primary export-toggle">匯出 ▾</button>
+    <button type="button" class="ui-button primary export-toggle"></button>
     <div class="export-menu" style="display:none">
       <div class="ui-row" style="margin-bottom:10px;">
-        <span class="ui-label">格式</span>
+        <span class="ui-label export-format-label"></span>
         <select class="export-format">
           ${FORMATS.map((f) => `<option value="${f.id}">${f.label}</option>`).join('')}
         </select>
       </div>
       <div class="ui-slider-row export-quality-row">
-        <div class="ui-slider-head"><span>品質</span><span class="export-quality-value">92%</span></div>
+        <div class="ui-slider-head"><span class="export-quality-label"></span><span class="export-quality-value">92%</span></div>
         <input type="range" class="export-quality" min="1" max="100" step="1" value="92" />
       </div>
-      <button type="button" class="ui-button primary block export-confirm">下載</button>
+      <button type="button" class="ui-button primary block export-confirm"></button>
     </div>
   `;
 
   const toggleBtn = root.querySelector('.export-toggle');
   const menuEl = root.querySelector('.export-menu');
+  const formatLabelEl = root.querySelector('.export-format-label');
   const formatSelect = root.querySelector('.export-format');
   const qualityRow = root.querySelector('.export-quality-row');
+  const qualityLabelEl = root.querySelector('.export-quality-label');
   const qualitySlider = root.querySelector('.export-quality');
   const qualityValue = root.querySelector('.export-quality-value');
   const confirmBtn = root.querySelector('.export-confirm');
+
+  function refreshTexts() {
+    toggleBtn.textContent = `${t('匯出')} ▾`;
+    formatLabelEl.textContent = t('格式');
+    qualityLabelEl.textContent = t('品質');
+    confirmBtn.textContent = t('下載');
+  }
+  refreshTexts();
+  onLangChange(refreshTexts);
 
   function updateQualityVisibility() {
     const def = FORMATS.find((f) => f.id === format);
@@ -75,7 +87,7 @@ export function createExportMenu({ doc, bus, toast }) {
 
   confirmBtn.addEventListener('click', async () => {
     if (!doc.hasImage()) {
-      toast('尚無圖片可匯出', 'error');
+      toast(t('尚無圖片可匯出'), 'error');
       return;
     }
     confirmBtn.disabled = true;
@@ -85,10 +97,10 @@ export function createExportMenu({ doc, bus, toast }) {
       const canvas = doc.getImage();
       const blob = await canvasToBlob(canvas, def.mime, def.quality ? quality : undefined);
       if (!blob) {
-        toast('匯出失敗', 'error');
+        toast(t('匯出失敗'), 'error');
         return;
       }
-      const baseName = stripExt(doc.getName() || '未命名');
+      const baseName = stripExt(doc.getName() || t('未命名'));
       const fileName = `${baseName}-edited.${def.id}`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -98,11 +110,11 @@ export function createExportMenu({ doc, bus, toast }) {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
-      toast(`已匯出 ${fileName}`, 'success');
+      toast(t('已匯出 {name}', { name: fileName }), 'success');
       setOpen(false);
     } catch (err) {
       console.error('[export] 匯出失敗', err);
-      toast(`匯出失敗：${err && err.message ? err.message : err}`, 'error');
+      toast(t('匯出失敗：{msg}', { msg: err && err.message ? err.message : err }), 'error');
     } finally {
       confirmBtn.disabled = false;
     }

@@ -40,14 +40,20 @@ export function createDoc({ bus }) {
     bus.emit('doc:change', { canvas, label });
   }
 
+  // undo/redo/reset 在 history 游標已指向新影像、但 'doc:change' 尚未送出前，
+  // 先 emit 'history:navigate'：讓工具有機會丟棄未套用的預覽/暫存狀態，
+  // 此時 ctx.doc.getImage() 已回傳「navigate 後」的新影像，工具可據此重設座標相關狀態。
+  // 沒有可退的步驟時仍 emit 'history:navigate'，讓未套用的預覽照樣被清掉
   function undo() {
     const canvas = history.undo();
+    bus.emit('history:navigate', { action: 'undo' });
     if (canvas) bus.emit('doc:change', { canvas, label: '復原' });
     return canvas;
   }
 
   function redo() {
     const canvas = history.redo();
+    bus.emit('history:navigate', { action: 'redo' });
     if (canvas) bus.emit('doc:change', { canvas, label: '重做' });
     return canvas;
   }
@@ -57,6 +63,7 @@ export function createDoc({ bus }) {
     if (!original) return null;
     const canvas = cloneCanvas(original);
     history.push(canvas, '重置');
+    bus.emit('history:navigate', { action: 'reset' });
     bus.emit('doc:change', { canvas, label: '重置' });
     return canvas;
   }

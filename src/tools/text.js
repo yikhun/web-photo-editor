@@ -3,6 +3,7 @@
 import '../styles/tools-adjust-text.css';
 import { cloneCanvas } from '../core/canvasUtil.js';
 import { FONT_OPTIONS, STYLE_OPTIONS, STYLES, renderTextObject, measureTextObject } from './text/styles.js';
+import { t } from '../core/i18n.js';
 
 const icon = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M5 6h14M12 6v12" stroke-width="2" stroke-linecap="round"/>
@@ -15,6 +16,7 @@ let idCounter = 0;
 let dragState = null;
 let exportHandlerRegistered = false;
 let loadHandlerRegistered = false;
+let historyHandlerRegistered = false;
 let mountedPanelEl = null;
 let mountedCtx = null;
 let panelRefs = {};
@@ -34,7 +36,7 @@ function createTextObject(kind, ctx) {
   const fontSize = Math.max(12, Math.round(img.width * p.ratio));
   const obj = {
     id: ++idCounter,
-    text: p.text,
+    text: t(p.text),
     x: img.width / 2,
     y: img.height / 2 + (textObjects.length % 6) * fontSize * 0.6,
     fontSize,
@@ -264,27 +266,27 @@ function mountPanel(ctx) {
 
   const addRow = ctx.ui.el('div', 'adj-grid');
   addRow.appendChild(
-    ctx.ui.button('新增標題', () => {
+    ctx.ui.button(t('新增標題'), () => {
       createTextObject('title', ctx);
       mountPanel(ctx);
       ctx.viewport.requestRender();
     }),
   );
   addRow.appendChild(
-    ctx.ui.button('新增副標題', () => {
+    ctx.ui.button(t('新增副標題'), () => {
       createTextObject('subtitle', ctx);
       mountPanel(ctx);
       ctx.viewport.requestRender();
     }),
   );
   addRow.appendChild(
-    ctx.ui.button('新增正文', () => {
+    ctx.ui.button(t('新增正文'), () => {
       createTextObject('body', ctx);
       mountPanel(ctx);
       ctx.viewport.requestRender();
     }),
   );
-  panelEl.appendChild(section(ctx, '新增文字', [addRow]));
+  panelEl.appendChild(section(ctx, t('新增文字'), [addRow]));
 
   const styleGrid = ctx.ui.el('div', 'txt-style-grid');
   for (const opt of STYLE_OPTIONS) {
@@ -292,18 +294,18 @@ function mountPanel(ctx) {
     btn.type = 'button';
     const preview = ctx.ui.el('span', 'txt-style-preview', 'Aa');
     btn.appendChild(preview);
-    btn.appendChild(ctx.ui.el('span', null, opt.label));
+    btn.appendChild(ctx.ui.el('span', null, t(opt.label)));
     const cur = selectedObj();
     if (cur && cur.style === opt.id) btn.classList.add('selected');
     btn.addEventListener('click', () => applyStyleToSelectedOrNew(opt.id, ctx));
     styleGrid.appendChild(btn);
   }
-  panelEl.appendChild(section(ctx, '花字樣式', [styleGrid]));
+  panelEl.appendChild(section(ctx, t('花字樣式'), [styleGrid]));
 
   const obj = selectedObj();
   if (!obj) {
     panelEl.appendChild(
-      ctx.ui.el('div', 'txt-object-hint', '尚未選取文字物件：點選畫布上的文字，或先新增一個。'),
+      ctx.ui.el('div', 'txt-object-hint', t('尚未選取文字物件：點選畫布上的文字，或先新增一個。')),
     );
     return;
   }
@@ -316,10 +318,10 @@ function mountPanel(ctx) {
     ctx.viewport.requestRender();
   });
   panelRefs.textarea = textarea;
-  panelEl.appendChild(section(ctx, '內容', [textarea]));
+  panelEl.appendChild(section(ctx, t('內容'), [textarea]));
 
   const fontSelect = ctx.ui.select(
-    FONT_OPTIONS.map((f) => ({ value: f.id, label: f.label })),
+    FONT_OPTIONS.map((f) => ({ value: f.id, label: t(f.label) })),
     FONT_OPTIONS.find((f) => f.family === obj.fontFamily)?.id || FONT_OPTIONS[0].id,
     (val) => {
       const f = FONT_OPTIONS.find((x) => x.id === val);
@@ -327,7 +329,7 @@ function mountPanel(ctx) {
       ctx.viewport.requestRender();
     },
   );
-  const fontSizeRow = ctx.ui.slider('字級', 8, 600, 1, obj.fontSize, (v) => {
+  const fontSizeRow = ctx.ui.slider(t('字級'), 8, 600, 1, obj.fontSize, (v) => {
     obj.fontSize = v;
     ctx.viewport.requestRender();
   });
@@ -335,10 +337,10 @@ function mountPanel(ctx) {
 
   const weightGroup = ctx.ui.buttonGroup(
     [
-      { id: '400', label: '一般' },
-      { id: '600', label: '中粗' },
-      { id: '700', label: '粗體' },
-      { id: '900', label: '特粗' },
+      { id: '400', label: t('一般') },
+      { id: '600', label: t('中粗') },
+      { id: '700', label: t('粗體') },
+      { id: '900', label: t('特粗') },
     ],
     String(obj.weight),
     (val) => {
@@ -369,9 +371,9 @@ function mountPanel(ctx) {
 
   const alignGroup = ctx.ui.buttonGroup(
     [
-      { id: 'left', label: '靠左' },
-      { id: 'center', label: '置中' },
-      { id: 'right', label: '靠右' },
+      { id: 'left', label: t('靠左') },
+      { id: 'center', label: t('置中') },
+      { id: 'right', label: t('靠右') },
     ],
     obj.align,
     (val) => {
@@ -380,21 +382,21 @@ function mountPanel(ctx) {
     },
   );
 
-  const lineHeightRow = ctx.ui.slider('行距', 0.8, 3, 0.1, obj.lineHeight, (v) => {
+  const lineHeightRow = ctx.ui.slider(t('行距'), 0.8, 3, 0.1, obj.lineHeight, (v) => {
     obj.lineHeight = v;
     ctx.viewport.requestRender();
   });
-  const letterSpacingRow = ctx.ui.slider('字距 (px)', -5, 40, 1, obj.letterSpacing, (v) => {
+  const letterSpacingRow = ctx.ui.slider(t('字距 (px)'), -5, 40, 1, obj.letterSpacing, (v) => {
     obj.letterSpacing = v;
     ctx.viewport.requestRender();
   });
-  const opacityRow = ctx.ui.slider('透明度 (%)', 0, 100, 5, Math.round(obj.opacity * 100), (v) => {
+  const opacityRow = ctx.ui.slider(t('透明度 (%)'), 0, 100, 5, Math.round(obj.opacity * 100), (v) => {
     obj.opacity = v / 100;
     ctx.viewport.requestRender();
   });
 
   const deleteBtn = ctx.ui.button(
-    '刪除此文字',
+    t('刪除此文字'),
     () => {
       textObjects = textObjects.filter((o) => o.id !== obj.id);
       selectedId = null;
@@ -405,12 +407,12 @@ function mountPanel(ctx) {
   );
 
   panelEl.appendChild(
-    section(ctx, '屬性', [
-      ctx.ui.el('div', 'ui-row', [ctx.ui.el('span', 'ui-label', '字型'), fontSelect]),
+    section(ctx, t('屬性'), [
+      ctx.ui.el('div', 'ui-row', [ctx.ui.el('span', 'ui-label', t('字型')), fontSelect]),
       fontSizeRow,
-      ctx.ui.el('div', 'ui-row', [ctx.ui.el('span', 'ui-label', '粗細'), weightGroup]),
-      ctx.ui.el('div', 'ui-row', [ctx.ui.el('span', 'ui-label', '顏色'), colorRow]),
-      ctx.ui.el('div', 'ui-row', [ctx.ui.el('span', 'ui-label', '對齊'), alignGroup]),
+      ctx.ui.el('div', 'ui-row', [ctx.ui.el('span', 'ui-label', t('粗細')), weightGroup]),
+      ctx.ui.el('div', 'ui-row', [ctx.ui.el('span', 'ui-label', t('顏色')), colorRow]),
+      ctx.ui.el('div', 'ui-row', [ctx.ui.el('span', 'ui-label', t('對齊')), alignGroup]),
       lineHeightRow,
       letterSpacingRow,
       opacityRow,
@@ -419,15 +421,15 @@ function mountPanel(ctx) {
   );
 
   panelEl.appendChild(
-    section(ctx, '完成', [
+    section(ctx, t('完成'), [
       ctx.ui.button(
-        '套用到圖片',
+        t('套用到圖片'),
         () => {
           applyAllToImage(ctx);
         },
         { primary: true, block: true },
       ),
-      ctx.ui.el('div', 'adj-help-text', '切換工具或匯出圖片時，尚未套用的文字也會自動合併進影像。'),
+      ctx.ui.el('div', 'adj-help-text', t('切換工具或匯出圖片時，尚未套用的文字也會自動合併進影像。')),
     ]),
   );
 }
@@ -446,6 +448,21 @@ function ensureGlobalHandlers(ctx) {
       selectedId = null;
       dragState = null;
       if (mountedPanelEl) mountPanel(mountedCtx || ctx);
+    });
+  }
+  if (!historyHandlerRegistered) {
+    historyHandlerRegistered = true;
+    // 復原/重做/重置：未套用的文字物件是 overlay（非預覽），不清空；
+    // 只確保座標仍落在（navigate 後的）新影像範圍內，避免文字跑到畫面外看不到。
+    ctx.bus.on('history:navigate', () => {
+      const img = ctx.doc.getImage();
+      if (!img) return;
+      for (const obj of textObjects) {
+        obj.x = Math.min(Math.max(obj.x, 0), img.width);
+        obj.y = Math.min(Math.max(obj.y, 0), img.height);
+      }
+      dragState = null;
+      if (mountedPanelEl) ctx.viewport.requestRender();
     });
   }
 }

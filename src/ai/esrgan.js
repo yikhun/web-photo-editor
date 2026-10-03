@@ -19,12 +19,13 @@
 // session 重建、wasm 退回、tile 數過多（確認每格僅 1 個 384 tile）、canvas 前後處理過重
 // 這幾個嫌疑皆已排除。曾嘗試用 tile 暫存畫布／colorAcc·weightAcc 累加陣列跨格重複利用來
 // 省掉每格的記憶體配置，但這類模組層級共享可變狀態在「同時存在兩個影片工作區實例」
-// （#/video 分頁與左側「影片摳圖」工具各自呼叫 upscale()）同時輸出時會有資料互相覆寫的風險，
+// （#/video 分頁與左側「影片去背」工具各自呼叫 upscale()）同時輸出時會有資料互相覆寫的風險，
 // 相對於 session.run() 本身 2~4.5 秒的量級，省下的配置時間（數十毫秒）不值得冒這個險，
 // 因此未採用，本檔維持原邏輯。
 import { getSession, getOrt, getBackend } from './ort.js';
 import { createCanvas } from '../core/canvasUtil.js';
 import { checkAborted, resizeCanvas } from './util.js';
+import { t } from '../core/i18n.js';
 
 const TILE_SIZE = {
   'realesrgan-fast': 384,
@@ -214,7 +215,7 @@ async function runTiledUpscale(session, ort, srcCanvas, T, nativeScale, { signal
       checkAborted(signal);
       blendTileInto(colorAcc, weightAcc, outW, outH, tensor, T * nativeScale, x0, y0, availW, availH, nativeScale, overlap, w, h);
       done++;
-      onProgress && onProgress(done / total, `處理區塊 ${done}/${total}`);
+      onProgress && onProgress(done / total, t('處理區塊 {done}/{total}', { done, total }));
     }
   }
   return finalizeCanvas(colorAcc, weightAcc, outW, outH);
@@ -238,7 +239,7 @@ function mergeAlpha(rgbCanvas, alphaSourceCanvas) {
 // upscale(canvas, { model, scale, maxSide, signal, onProgress }) -> Promise<HTMLCanvasElement>
 export async function upscale(canvas, { model = 'realesrgan-fast', scale = 4, maxSide, signal, onProgress } = {}) {
   const T = TILE_SIZE[model];
-  if (!T) throw new Error(`未知的變清晰模型: ${model}`);
+  if (!T) throw new Error(t('未知的變清晰模型: {model}', { model }));
   checkAborted(signal);
 
   const srcW = canvas.width;
@@ -246,11 +247,14 @@ export async function upscale(canvas, { model = 'realesrgan-fast', scale = 4, ma
   const plan = planUpscale(srcW, srcH, scale, maxSide);
   if (plan.tooLarge) {
     throw new Error(
-      `輸出尺寸過大（${plan.outW4x}×${plan.outH4x}，超過約 8000 萬像素上限），請先縮小圖片或改用較低倍率`,
+      t('輸出尺寸過大（{w}×{h}，超過約 8000 萬像素上限），請先縮小圖片或改用較低倍率', {
+        w: plan.outW4x,
+        h: plan.outH4x,
+      }),
     );
   }
 
-  onProgress && onProgress(0, '準備模型');
+  onProgress && onProgress(0, t('準備模型'));
   const session = await getSession(model, {
     signal,
     onProgress: (p, text) => onProgress && onProgress(p * 0.12, text),
@@ -270,11 +274,11 @@ export async function upscale(canvas, { model = 'realesrgan-fast', scale = 4, ma
 
   let finalCanvas = resultCanvas;
   if (plan.requestedScale === 2) {
-    onProgress && onProgress(0.95, '縮小至 2 倍輸出');
+    onProgress && onProgress(0.95, t('縮小至 2 倍輸出'));
     finalCanvas = resizeCanvas(resultCanvas, plan.finalW, plan.finalH);
   }
 
   checkAborted(signal);
-  onProgress && onProgress(1, '完成');
+  onProgress && onProgress(1, t('完成'));
   return finalCanvas;
 }

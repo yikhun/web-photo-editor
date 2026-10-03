@@ -2,6 +2,8 @@
 // ctx.runTask({ title, run }), run: async ({ signal, progress }) => result
 // 取消 -> signal.abort()，回傳 null，畫面不變；例外 -> 顯示錯誤 toast 並回傳 null。
 // 執行中重複呼叫要拒絕並提示。
+import { t } from './i18n.js';
+
 export function createTask({ stageWrapEl, toast }) {
   let busy = false;
 
@@ -12,7 +14,7 @@ export function createTask({ stageWrapEl, toast }) {
     <div class="task-bar-track"><div class="task-bar-fill"></div></div>
     <div class="task-percent">0%</div>
     <div class="task-desc"></div>
-    <button class="ui-button" type="button">取消</button>
+    <button class="ui-button" type="button"></button>
   `;
   stageWrapEl.appendChild(overlay);
 
@@ -21,15 +23,16 @@ export function createTask({ stageWrapEl, toast }) {
   const percentEl = overlay.querySelector('.task-percent');
   const descEl = overlay.querySelector('.task-desc');
   const cancelBtn = overlay.querySelector('button');
+  cancelBtn.textContent = t('取消');
 
-  async function run({ title = '生成中', run: runFn }) {
+  async function run({ title, run: runFn }) {
     if (busy) {
-      toast('已有任務執行中，請稍候', 'error');
+      toast(t('已有任務執行中，請稍候'), 'error');
       return null;
     }
     busy = true;
     const controller = new AbortController();
-    titleEl.textContent = title;
+    titleEl.textContent = t(title || '生成中');
     barFillEl.style.width = '0%';
     percentEl.textContent = '0%';
     descEl.textContent = '';
@@ -42,7 +45,7 @@ export function createTask({ stageWrapEl, toast }) {
       const pct = Math.round(Math.min(1, Math.max(0, p)) * 100);
       barFillEl.style.width = `${pct}%`;
       percentEl.textContent = `${pct}%`;
-      if (text) descEl.textContent = text;
+      if (text) descEl.textContent = t(text);
     }
 
     let result = null;
@@ -56,7 +59,7 @@ export function createTask({ stageWrapEl, toast }) {
         result = null;
       } else {
         console.error('[task] 執行失敗', err);
-        toast(`執行失敗：${err && err.message ? err.message : err}`, 'error');
+        toast(t('執行失敗：{msg}', { msg: err && err.message ? err.message : err }), 'error');
         result = null;
       }
     } finally {

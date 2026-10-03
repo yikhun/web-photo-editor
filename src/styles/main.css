@@ -177,7 +177,9 @@ button {
 .tool-btn-label {
   font-size: 10px;
   line-height: 1.2;
-  white-space: nowrap;
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: break-word;
 }
 
 #panel {

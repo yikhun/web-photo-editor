@@ -1,8 +1,9 @@
-// 摳圖工具：AI 一鍵去背（U²-Net）+ 主體保留/羽化曲線 + 筆刷修補 alpha + 換背景 + 套用/下載透明 PNG。
+// 去背工具：AI 一鍵去背（U²-Net）+ 主體保留/羽化曲線 + 筆刷修補 alpha + 換背景 + 套用/下載透明 PNG。
 import '../styles/tool-ai.css';
 import { predictAlpha } from '../ai/u2net.js';
 import { createCanvas, cloneCanvas, loadImageFromFile } from '../core/canvasUtil.js';
 import { blurGrayFloat, drawImageCover, stripExt, downloadCanvasAsPng } from '../ai/util.js';
+import { t } from '../core/i18n.js';
 
 const icon = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <circle cx="7" cy="7" r="3" stroke-width="2"/>
@@ -44,6 +45,9 @@ let brushHardness = 0.7;
 let mouseImagePoint = null;
 let lastPaintPoint = null;
 let curveRaf = null;
+let lastSourceImage = null; // ctx.doc.getImage() 參照，分辨「真的換圖」vs「同一張圖重新 mount（如切換語言／自己剛 commit）」
+let lastPanelEl = null; // mount 時的 panelEl，history:navigate 時用來重畫面板
+let unsubscribeHistoryNav = null;
 
 function resetState() {
   rawAlpha = null;
@@ -193,11 +197,25 @@ function renderPreview() {
   ctx.viewport.requestRender();
 }
 
+// ---------- commit 目前結果 ----------
+// 把 ctx.doc.commit() 的結果記成 lastSourceImage：下次這個工具重新 mount（切工具再切回來、切換語言）
+// 時，sameImage 判斷會認出「這就是我自己剛 commit 的東西」而不是外部換了新圖，不會誤觸 resetState()
+// 把 sourceCanvas/alpha/滑桿狀態整個清掉（sourceCanvas 仍是修補前的原圖，commit 只動 ctx.doc 的歷史，
+// 不影響我們內部拿來重算 alpha 的基底）。
+function commitCurrentResult(label) {
+  const cutout = buildCutout();
+  const result = bgMode === 'transparent' ? cutout : composeWithBackground(cutout);
+  ctx.commit(result, label);
+  lastSourceImage = result;
+  ctx.preview(null);
+  return result;
+}
+
 // ---------- AI 推論 ----------
 async function runMatting() {
   if (!ctx.doc.hasImage()) return;
   const result = await ctx.runTask({
-    title: 'AI 摳圖中',
+    title: t('AI 去背中'),
     async run({ signal, progress }) {
       return predictAlpha(sourceCanvas, { model: modelKey, signal, onProgress: progress });
     },
@@ -207,32 +225,29 @@ async function runMatting() {
   manualCoverage = new Float32Array(w * h);
   manualTarget = new Float32Array(w * h);
   applyCurveAndFeather();
-  ctx.toast('摳圖完成', 'success');
+  // 推論完成立刻 commit 一筆，讓復原／重做／重置馬上對這次去背生效，不必等使用者按「套用」。
+  commitCurrentResult(t('AI 去背'));
+  ctx.toast(t('去背完成'), 'success');
 }
 
 function applyResult() {
   if (!finalAlpha) {
-    ctx.toast('請先執行 AI 摳圖', 'error');
+    ctx.toast(t('請先執行 AI 去背'), 'error');
     return;
   }
-  const cutout = buildCutout();
-  if (bgMode === 'transparent') {
-    ctx.commit(cutout, '摳圖');
-  } else {
-    ctx.commit(composeWithBackground(cutout), '摳圖換背景');
-  }
-  ctx.toast('已套用摳圖結果', 'success');
+  commitCurrentResult(t('調整去背'));
+  ctx.toast(t('已套用去背結果'), 'success');
 }
 
 function downloadTransparent() {
   if (!finalAlpha) {
-    ctx.toast('請先執行 AI 摳圖', 'error');
+    ctx.toast(t('請先執行 AI 去背'), 'error');
     return;
   }
   const cutout = buildCutout();
-  const base = stripExt((ctx.doc.getName && ctx.doc.getName()) || '圖片');
-  downloadCanvasAsPng(cutout, `${base}-去背.png`);
-  ctx.toast('已下載透明 PNG', 'success');
+  const base = stripExt((ctx.doc.getName && ctx.doc.getName()) || t('圖片'));
+  downloadCanvasAsPng(cutout, `${base}-${t('去背')}.png`);
+  ctx.toast(t('已下載透明 PNG'), 'success');
 }
 
 // ---------- viewport 互動（筆刷）----------
@@ -280,24 +295,29 @@ const brushInteraction = {
   },
 };
 
-export default {
-  id: 'matting',
-  name: '摳圖',
-  icon,
-  needsImage: true,
-  mount(panelEl, c) {
+function mountPanel(panelEl, c) {
     ctx = c;
     panelEl.innerHTML = '';
-    sourceCanvas = cloneCanvas(ctx.doc.getImage());
+    lastPanelEl = panelEl;
+    const img = ctx.doc.getImage();
+    // 同一張圖（參照相同）代表只是重新 mount（例如切換語言面板重畫，或剛好是自己 commitCurrentResult()
+    // 產生的那張圖——詳見該函式），保留目前的去背結果/滑桿/筆刷修補狀態；真的換了底圖（外部編輯、
+    // 開新圖）才整個重置，且只有這時才重新從 ctx.doc 取用底圖（sourceCanvas 必須一路是「去背前」的
+    // 原圖，commitCurrentResult() 之後 ctx.doc 的目前影像已經是合成/透明結果，不能拿來覆寫它）。
+    const sameImage = img === lastSourceImage && sourceCanvas != null;
+    lastSourceImage = img;
+    if (!sameImage) {
+      sourceCanvas = cloneCanvas(img);
+      resetState();
+    }
     w = sourceCanvas.width;
     h = sourceCanvas.height;
-    resetState();
 
-    const runBtn = ctx.ui.button('AI 一鍵摳圖', () => runMatting(), { primary: true, block: true });
+    const runBtn = ctx.ui.button(t('AI 一鍵去背'), () => runMatting(), { primary: true, block: true });
     const modelGroup = ctx.ui.buttonGroup(
       [
-        { id: 'u2net', label: '標準 176MB（較準）' },
-        { id: 'u2netp', label: '輕量 4.6MB（較快）' },
+        { id: 'u2net', label: t('標準 176MB（較準）') },
+        { id: 'u2netp', label: t('輕量 4.6MB（較快）') },
       ],
       modelKey,
       (id) => {
@@ -305,29 +325,29 @@ export default {
       },
     );
 
-    const retainSlider = ctx.ui.slider('主體保留', -50, 50, 1, retain, (v) => {
+    const retainSlider = ctx.ui.slider(t('主體保留'), -50, 50, 1, retain, (v) => {
       retain = v;
       scheduleCurve();
     });
-    const featherSlider = ctx.ui.slider('邊緣羽化 (px)', 0, 10, 1, feather, (v) => {
+    const featherSlider = ctx.ui.slider(t('邊緣羽化 (px)'), 0, 10, 1, feather, (v) => {
       feather = v;
       scheduleCurve();
     });
 
     const brushModeGroup = ctx.ui.buttonGroup(
       [
-        { id: 'keep', label: '保留（加回）' },
-        { id: 'erase', label: '擦除' },
+        { id: 'keep', label: t('保留（加回）') },
+        { id: 'erase', label: t('擦除') },
       ],
       brushMode,
       (id) => {
         brushMode = id;
       },
     );
-    const brushSizeSlider = ctx.ui.slider('筆刷大小', 4, 300, 1, brushSize, (v) => {
+    const brushSizeSlider = ctx.ui.slider(t('筆刷大小'), 4, 300, 1, brushSize, (v) => {
       brushSize = v;
     });
-    const brushHardnessSlider = ctx.ui.slider('筆刷硬度', 0, 100, 1, Math.round(brushHardness * 100), (v) => {
+    const brushHardnessSlider = ctx.ui.slider(t('筆刷硬度'), 0, 100, 1, Math.round(brushHardness * 100), (v) => {
       brushHardness = v / 100;
     });
 
@@ -370,30 +390,30 @@ export default {
         bgSubPanel.appendChild(wrap);
       } else if (bgMode === 'image') {
         const fb = ctx.ui.fileButton(
-          '上傳背景圖',
+          t('上傳背景圖'),
           (file) => {
             loadImageFromFile(file)
               .then((canvas) => {
                 bgImageCanvas = canvas;
                 renderPreview();
-                ctx.toast('背景圖已套用', 'success');
+                ctx.toast(t('背景圖已套用'), 'success');
               })
-              .catch(() => ctx.toast('背景圖載入失敗', 'error'));
+              .catch(() => ctx.toast(t('背景圖載入失敗'), 'error'));
           },
           { block: true },
         );
         bgSubPanel.appendChild(fb);
-        if (!bgImageCanvas) bgSubPanel.appendChild(ctx.ui.el('div', 'ai-hint', '尚未上傳背景圖（以 cover 方式填滿）'));
+        if (!bgImageCanvas) bgSubPanel.appendChild(ctx.ui.el('div', 'ai-hint', t('尚未上傳背景圖（以 cover 方式填滿）')));
       }
     }
 
     const bgModeGroup = ctx.ui.buttonGroup(
       [
-        { id: 'transparent', label: '透明' },
-        { id: 'color', label: '純色' },
-        { id: 'gradient', label: '漸層' },
-        { id: 'image', label: '圖片' },
-        { id: 'blur', label: '模糊原圖' },
+        { id: 'transparent', label: t('透明') },
+        { id: 'color', label: t('純色') },
+        { id: 'gradient', label: t('漸層') },
+        { id: 'image', label: t('圖片') },
+        { id: 'blur', label: t('模糊原圖') },
       ],
       bgMode,
       (id) => {
@@ -404,28 +424,49 @@ export default {
     );
     refreshBgSubPanel();
 
-    const applyBtn = ctx.ui.button('套用', () => applyResult(), { primary: true, block: true });
-    const downloadBtn = ctx.ui.button('下載透明 PNG', () => downloadTransparent(), { block: true });
+    const applyBtn = ctx.ui.button(t('套用'), () => applyResult(), { primary: true, block: true });
+    const downloadBtn = ctx.ui.button(t('下載透明 PNG'), () => downloadTransparent(), { block: true });
 
-    panelEl.appendChild(ctx.ui.section('AI 摳圖', [runBtn, modelGroup]));
-    panelEl.appendChild(ctx.ui.section('調整', [retainSlider, featherSlider]));
+    panelEl.appendChild(ctx.ui.section(t('AI 去背'), [runBtn, modelGroup]));
+    panelEl.appendChild(ctx.ui.section(t('調整'), [retainSlider, featherSlider]));
     panelEl.appendChild(
-      ctx.ui.section('筆刷修補（執行摳圖後，在畫布上塗抹）', [brushModeGroup, brushSizeSlider, brushHardnessSlider]),
+      ctx.ui.section(t('筆刷修補（執行去背後，在畫布上塗抹）'), [brushModeGroup, brushSizeSlider, brushHardnessSlider]),
     );
-    panelEl.appendChild(ctx.ui.section('換背景', [bgModeGroup, bgSubPanel]));
-    panelEl.appendChild(ctx.ui.section('輸出', [applyBtn, downloadBtn]));
+    panelEl.appendChild(ctx.ui.section(t('換背景'), [bgModeGroup, bgSubPanel]));
+    panelEl.appendChild(ctx.ui.section(t('輸出'), [applyBtn, downloadBtn]));
 
     renderPreview();
-  },
+}
+
+// 復原／重做／重置前（另一個 core 事件 'history:navigate'，在實際導覽與清預覽之前 emit）：
+// 去背這個工具正在編輯的暫存結果（alpha、筆刷修補、換背景設定）此刻都還沒寫回 ctx.doc，
+// 導覽完成後它們對不上新的目前影像了，整個丟掉並把面板重畫回初始狀態。
+function handleHistoryNavigate(c) {
+  resetState();
+  c.preview(null);
+  if (lastPanelEl) mountPanel(lastPanelEl, c);
+}
+
+export default {
+  id: 'matting',
+  name: '去背',
+  icon,
+  needsImage: true,
+  mount: mountPanel,
   activate(c) {
     ctx = c;
     ctx.viewport.setOverlay(brushOverlay);
     ctx.viewport.setInteraction(brushInteraction);
+    unsubscribeHistoryNav = ctx.bus.on('history:navigate', () => handleHistoryNavigate(ctx));
   },
   deactivate(c) {
     ctx = c;
     ctx.viewport.setOverlay(null);
     ctx.viewport.setInteraction(null);
     ctx.preview(null);
+    if (unsubscribeHistoryNav) {
+      unsubscribeHistoryNav();
+      unsubscribeHistoryNav = null;
+    }
   },
 };

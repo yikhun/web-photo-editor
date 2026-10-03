@@ -1,8 +1,9 @@
 // AI 共用小工具：取消例外、canvas 縮放/裁切、灰階 Float32Array <-> canvas 轉換、高斯模糊近似。
 import { createCanvas } from '../core/canvasUtil.js';
+import { t } from '../core/i18n.js';
 
 export function makeAbortError() {
-  return new DOMException('使用者已取消', 'AbortError');
+  return new DOMException(t('使用者已取消'), 'AbortError');
 }
 
 export function checkAborted(signal) {

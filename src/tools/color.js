@@ -8,6 +8,7 @@ import { applyCpu } from './color/cpu.js';
 import { PRESETS, findPreset } from './color/presets.js';
 import { FILTERS, findFilter } from './color/filters.js';
 import { hexToRgb01, rgb01ToHex, rgbToHsl, sampleAverageColor } from './color/colorUtil.js';
+import { t } from '../core/i18n.js';
 
 const icon = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8H16a4 4 0 0 0 4-4c0-4.4-3.6-7.5-8-7.5z" stroke-width="2"/>
@@ -97,10 +98,12 @@ let workingSourceCanvas = null; // 目前委入影像的 clone（全尺寸）
 let previewSourceCanvas = null; // 長邊 <=2048 的縮小版，供即時預覽
 let thumbSourceCanvas = null; // 長邊 <=150 的縮小版，供預設縮圖
 let state = createDefaultState();
+let lastDocImage = null; // ctx.doc.getImage() 的參照，用來分辨「真的換圖」vs「同一張圖重新 mount（如切換語言)」
 
 let dirty = false;
 let rafId = null;
 let unsubscribeDocChange = null;
+let unsubscribeHistoryNav = null;
 let picking = false;
 
 // UI refs（mount 時重建）
@@ -131,7 +134,7 @@ function renderWithEngine(sourceCanvas, params, toastCtx) {
   }
   if (toastCtx && !cpuFallbackWarned) {
     cpuFallbackWarned = true;
-    toastCtx.toast('此瀏覽器不支援 WebGL2，調色改用較慢的 CPU 運算', 'info');
+    toastCtx.toast(t('此瀏覽器不支援 WebGL2，調色改用較慢的 CPU 運算'), 'info');
   }
   return applyCpu(sourceCanvas, params);
 }
@@ -187,7 +190,7 @@ function refreshControlsFromState() {
   refs.commonSwatches.setSelected(state.colorReplace.targetHex);
   refs.toleranceRow.setValue(state.colorReplace.tolerance);
   refs.preserveToggle.setChecked(state.colorReplace.preserveLightness);
-  refs.pickBtn.textContent = '點選畫面取色';
+  refs.pickBtn.textContent = t('點選畫面取色');
   refs.pickBtn.classList.remove('active');
 }
 
@@ -227,17 +230,17 @@ function buildFilterExtra() {
     });
     const wrap1 = document.createElement('label');
     wrap1.className = 'color-duotone-item';
-    wrap1.appendChild(document.createTextNode('陰影色 '));
+    wrap1.appendChild(document.createTextNode(t('陰影色') + ' '));
     wrap1.appendChild(c1);
     const wrap2 = document.createElement('label');
     wrap2.className = 'color-duotone-item';
-    wrap2.appendChild(document.createTextNode('亮部色 '));
+    wrap2.appendChild(document.createTextNode(t('亮部色') + ' '));
     wrap2.appendChild(c2);
     row.appendChild(wrap1);
     row.appendChild(wrap2);
     el.appendChild(row);
   } else if (f.id === 'pixelate') {
-    const row = toolCtx.ui.slider('像素區塊大小', 4, 60, 1, f.pixelBlock, (v) => {
+    const row = toolCtx.ui.slider(t('像素區塊大小'), 4, 60, 1, f.pixelBlock, (v) => {
       f.pixelBlock = v;
       schedulePreviewRender();
     });
@@ -274,7 +277,7 @@ function applyTargetColor(hex) {
 
 function togglePicking(ctx) {
   picking = !picking;
-  refs.pickBtn.textContent = picking ? '請在畫面上點一下…' : '點選畫面取色';
+  refs.pickBtn.textContent = picking ? t('請在畫面上點一下…') : t('點選畫面取色');
   refs.pickBtn.classList.toggle('active', picking);
   if (picking) {
     ctx.viewport.setInteraction({
@@ -292,7 +295,7 @@ function pickColorAt(ctx, p) {
   if (!workingSourceCanvas) return;
   const sample = sampleAverageColor(workingSourceCanvas, p.x, p.y, 5);
   if (sample.a < 0.04) {
-    ctx.toast('該處幾乎透明，請改選其他位置', 'error');
+    ctx.toast(t('該處幾乎透明，請改選其他位置'), 'error');
     return;
   }
   const hsl = rgbToHsl(sample.r, sample.g, sample.b);
@@ -302,7 +305,7 @@ function pickColorAt(ctx, p) {
   state.colorReplace.enabled = true;
   updateSourceSwatch();
   picking = false;
-  refs.pickBtn.textContent = '點選畫面取色';
+  refs.pickBtn.textContent = t('點選畫面取色');
   refs.pickBtn.classList.remove('active');
   ctx.viewport.setInteraction(null);
   schedulePreviewRender();
@@ -333,25 +336,46 @@ function applyEdit(ctx) {
   } else {
     result = applyCpu(workingSourceCanvas, state);
   }
-  ctx.commit(result, '調色');
-  ctx.toast('已套用調色', 'success');
+  ctx.commit(result, t('調色'));
+  ctx.toast(t('已套用調色'), 'success');
+}
+
+// 滑桿/濾鏡/換色皆為預設值時，直接讓 viewport 顯示真正的文件影像（不經過縮小再放大的預覽材質），
+// 避免大圖在「根本沒調整」時也被重取樣一輪而損失一點銳利度。
+function isDefaultState(s) {
+  for (const def of SLIDER_DEFS) {
+    if (s[def.key] !== def.default) return false;
+  }
+  if (s.filter.id !== 'none') return false;
+  if (s.colorReplace.enabled) return false;
+  if (s.splitStrength) return false;
+  return true;
 }
 
 function refreshBaseFromDoc(ctx) {
   const img = ctx.doc.getImage();
   if (!img) return;
+  // 同一張圖（參照相同）代表這次只是重新 mount（例如切換語言面板重畫），不是真的換了底圖，
+  // 此時保留使用者已調的滑桿/濾鏡/換色狀態；真的換圖（doc:change 來的新 canvas）才重置。
+  const sameImage = img === lastDocImage && workingSourceCanvas != null;
+  lastDocImage = img;
   workingSourceCanvas = cloneCanvas(img);
   previewSourceCanvas = downscale(workingSourceCanvas, PREVIEW_MAX_SIDE);
   thumbSourceCanvas = downscale(workingSourceCanvas, THUMB_MAX_SIDE);
   glTextureSource = null;
-  state = createDefaultState();
+  if (!sameImage) state = createDefaultState();
   picking = false;
   if (refs) {
     refreshControlsFromState();
     rebuildThumbnails(ctx);
   }
   ctx.viewport.setInteraction(null);
-  ctx.preview(null);
+  if (isDefaultState(state)) {
+    ctx.preview(null);
+  } else {
+    // 保留下來的非預設狀態：排進下一個 rAF 重新渲染預覽，讓重新 mount 後畫面立刻反映之前的調整
+    schedulePreviewRender();
+  }
 }
 
 let toolCtx = null;
@@ -375,22 +399,22 @@ function buildPanel(panelEl, ctx) {
     const canvasEl = document.createElement('canvas');
     thumbWrap.appendChild(canvasEl);
     card.appendChild(thumbWrap);
-    card.appendChild(ui.el('div', 'color-preset-label', preset.label));
+    card.appendChild(ui.el('div', 'color-preset-label', t(preset.label)));
     card.addEventListener('click', () => applyPresetById(preset.id));
     presetGrid.appendChild(card);
     refs.presetCards[preset.id] = { card, canvasEl };
   }
-  refs.intensityRow = ui.slider('強度', 0, 100, 1, state.intensity, (v) => {
+  refs.intensityRow = ui.slider(t('強度'), 0, 100, 1, state.intensity, (v) => {
     state.intensity = v;
     schedulePreviewRender();
   });
 
-  panelEl.appendChild(ui.section('預設', [presetGrid, refs.intensityRow]));
+  panelEl.appendChild(ui.section(t('預設'), [presetGrid, refs.intensityRow]));
 
   // ---- 2. 滑桿 ----
   const sliderNodes = [];
   for (const def of SLIDER_DEFS) {
-    const row = ui.slider(def.label, def.min, def.max, 1, state[def.key], (v) => {
+    const row = ui.slider(t(def.label), def.min, def.max, 1, state[def.key], (v) => {
       state[def.key] = v;
       schedulePreviewRender();
     });
@@ -402,11 +426,11 @@ function buildPanel(panelEl, ctx) {
     refs.sliderRows[def.key] = row;
     sliderNodes.push(row);
   }
-  panelEl.appendChild(ui.section('滑桿（雙擊歸零）', sliderNodes));
+  panelEl.appendChild(ui.section(t('滑桿（雙擊歸零）'), sliderNodes));
 
   // ---- 3. 濾鏡 ----
   refs.filterSelect = ui.select(
-    FILTERS.map((f) => ({ value: f.id, label: f.label })),
+    FILTERS.map((f) => ({ value: f.id, label: t(f.label) })),
     state.filter.id,
     (val) => {
       const f = findFilter(val);
@@ -416,19 +440,19 @@ function buildPanel(panelEl, ctx) {
       schedulePreviewRender();
     },
   );
-  refs.filterIntensityRow = ui.slider('濾鏡強度', 0, 100, 1, state.filter.intensity, (v) => {
+  refs.filterIntensityRow = ui.slider(t('濾鏡強度'), 0, 100, 1, state.filter.intensity, (v) => {
     state.filter.intensity = v;
     schedulePreviewRender();
   });
   refs.filterExtra = ui.el('div', 'color-filter-extra');
-  panelEl.appendChild(ui.section('濾鏡', [refs.filterSelect, refs.filterIntensityRow, refs.filterExtra]));
+  panelEl.appendChild(ui.section(t('濾鏡'), [refs.filterSelect, refs.filterIntensityRow, refs.filterExtra]));
 
   // ---- 4. 一鍵換色 ----
-  refs.pickBtn = ui.button('點選畫面取色', () => togglePicking(ctx), { block: true });
-  const clearBtn = ui.button('清除選色', clearPick);
+  refs.pickBtn = ui.button(t('點選畫面取色'), () => togglePicking(ctx), { block: true });
+  const clearBtn = ui.button(t('清除選色'), clearPick);
   refs.sourceSwatch = ui.el('div', 'color-swatch-preview empty');
   const sourceRow = ui.el('div', 'color-source-row', [
-    ui.el('span', null, '來源色：'),
+    ui.el('span', null, t('來源色：')),
     refs.sourceSwatch,
     clearBtn,
   ]);
@@ -439,21 +463,21 @@ function buildPanel(panelEl, ctx) {
   refs.targetColorInput.addEventListener('input', () => applyTargetColor(refs.targetColorInput.value));
   refs.commonSwatches = ui.colorSwatches(TARGET_SWATCHES, state.colorReplace.targetHex, (hex) => applyTargetColor(hex));
   const targetRow = ui.el('div', 'color-target-row', [
-    ui.el('span', null, '目標色：'),
+    ui.el('span', null, t('目標色：')),
     refs.targetColorInput,
   ]);
 
-  refs.toleranceRow = ui.slider('容差（色相範圍）', 0, 180, 1, state.colorReplace.tolerance, (v) => {
+  refs.toleranceRow = ui.slider(t('容差（色相範圍）'), 0, 180, 1, state.colorReplace.tolerance, (v) => {
     state.colorReplace.tolerance = v;
     schedulePreviewRender();
   });
-  refs.preserveToggle = ui.toggle('保留明暗（只轉色相＋飽和度）', state.colorReplace.preserveLightness, (v) => {
+  refs.preserveToggle = ui.toggle(t('保留明暗（只轉色相＋飽和度）'), state.colorReplace.preserveLightness, (v) => {
     state.colorReplace.preserveLightness = v;
     schedulePreviewRender();
   });
 
   panelEl.appendChild(
-    ui.section('一鍵換色', [
+    ui.section(t('一鍵換色'), [
       refs.pickBtn,
       sourceRow,
       targetRow,
@@ -464,9 +488,9 @@ function buildPanel(panelEl, ctx) {
   );
 
   // ---- 5. 動作 ----
-  const applyBtn = ui.button('套用', () => applyEdit(ctx), { primary: true, block: true });
-  const resetBtn = ui.button('重設滑桿', () => resetSliders(ctx), { block: true });
-  panelEl.appendChild(ui.section('動作', [applyBtn, resetBtn]));
+  const applyBtn = ui.button(t('套用'), () => applyEdit(ctx), { primary: true, block: true });
+  const resetBtn = ui.button(t('重設滑桿'), () => resetSliders(ctx), { block: true });
+  panelEl.appendChild(ui.section(t('動作'), [applyBtn, resetBtn]));
 
   buildFilterExtra();
 }
@@ -485,7 +509,8 @@ export default {
     rebuildThumbnails(ctx);
   },
   activate(ctx) {
-    dirty = false;
+    // 不在這裡強制 dirty=false：mount() 若保留了非預設狀態（例如切換語言重新 mount），
+    // 會在那裡排好一次 schedulePreviewRender()，activate 要讓它自然跑到，而不是蓋掉。
     function loop() {
       if (dirty) {
         dirty = false;
@@ -495,6 +520,9 @@ export default {
     }
     rafId = requestAnimationFrame(loop);
     unsubscribeDocChange = ctx.bus.on('doc:change', () => refreshBaseFromDoc(ctx));
+    // 復原／重做／重置前：目前調色滑桿都還只是即時預覽、沒寫回 ctx.doc，導覽完後预覽會對不上
+    // 新的目前影像，整個丟掉並把滑桿/預設/換色歸零。
+    unsubscribeHistoryNav = ctx.bus.on('history:navigate', () => resetSliders(ctx));
   },
   deactivate(ctx) {
     if (rafId) cancelAnimationFrame(rafId);
@@ -502,6 +530,10 @@ export default {
     if (unsubscribeDocChange) {
       unsubscribeDocChange();
       unsubscribeDocChange = null;
+    }
+    if (unsubscribeHistoryNav) {
+      unsubscribeHistoryNav();
+      unsubscribeHistoryNav = null;
     }
     picking = false;
     ctx.viewport.setInteraction(null);

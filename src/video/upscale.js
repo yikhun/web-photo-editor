@@ -1,5 +1,7 @@
 // 影片放大模式：呼叫 ai/esrgan.js 逐格放大；輸出長邊上限 4K（3840），尺寸強制偶數（編碼器需要）。
 // esrgan.js 由另一個 agent 並行撰寫，可能尚未就緒，因此用動態 import 延後載入並給出可讀錯誤。
+import { t } from '../core/i18n.js';
+
 export const MAX_SIDE = 3840;
 
 let esrganModulePromise = null;
@@ -8,7 +10,7 @@ export async function loadEsrgan() {
     esrganModulePromise = import('../ai/esrgan.js').catch((err) => {
       esrganModulePromise = null;
       console.error('[video/upscale] 載入 esrgan.js 失敗', err);
-      throw new Error('放大模型模組（src/ai/esrgan.js）尚未就緒，暫時無法使用放大功能');
+      throw new Error(t('放大模型模組（src/ai/esrgan.js）尚未就緒，暫時無法使用放大功能'));
     });
   }
   return esrganModulePromise;
@@ -58,10 +60,10 @@ export function estimateRemainingMs(firstFrameMs, totalFrames, doneFrames) {
 }
 
 export function formatDuration(ms) {
-  if (!Number.isFinite(ms) || ms <= 0) return '估算中…';
+  if (!Number.isFinite(ms) || ms <= 0) return t('估算中…');
   const s = Math.round(ms / 1000);
-  if (s < 60) return `約 ${s} 秒`;
+  if (s < 60) return t('約 {s} 秒', { s });
   const m = Math.floor(s / 60);
   const rs = s - m * 60;
-  return `約 ${m} 分 ${rs} 秒`;
+  return t('約 {m} 分 {s} 秒', { m, s: rs });
 }

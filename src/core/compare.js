@@ -3,6 +3,7 @@
 // 2. showCompare(before, after)：畫面上顯示可拖曳的垂直分隔線（左 before／右 after，
 //    線上有把手與文字標籤），直到下次 commit／切工具或按「關閉對比」。
 import { createCanvas } from './canvasUtil.js';
+import { t, onLangChange } from './i18n.js';
 
 export function createCompare({ viewport, doc, bus, stageWrapEl }) {
   let holdActive = false;
@@ -16,10 +17,18 @@ export function createCompare({ viewport, doc, bus, stageWrapEl }) {
   // ---------- 關閉對比按鈕（畫布角落）----------
   const closeBtn = document.createElement('button');
   closeBtn.className = 'ui-button compare-close-btn';
-  closeBtn.textContent = '關閉對比 ✕';
   closeBtn.style.display = 'none';
   closeBtn.addEventListener('click', () => closeSplit());
   stageWrapEl.appendChild(closeBtn);
+
+  function refreshCloseBtnText() {
+    closeBtn.textContent = `${t('關閉對比')} ✕`;
+  }
+  refreshCloseBtnText();
+  onLangChange(() => {
+    refreshCloseBtnText();
+    if (splitActive) viewport.requestRender();
+  });
 
   function composeAndPreview() {
     if (!splitBefore || !splitAfter) return;
@@ -78,8 +87,8 @@ export function createCompare({ viewport, doc, bus, stageWrapEl }) {
     ctx2d.fillRect(left.x + 8, labelY, 48, 20);
     ctx2d.fillRect(top.x + 8, labelY, 56, 20);
     ctx2d.fillStyle = '#fff';
-    ctx2d.fillText('原圖', left.x + 14, labelY + 4);
-    ctx2d.fillText('處理後', top.x + 14, labelY + 4);
+    ctx2d.fillText(t('原圖'), left.x + 14, labelY + 4);
+    ctx2d.fillText(t('處理後'), top.x + 14, labelY + 4);
     ctx2d.restore();
     void right; // 保留供未來延伸（例如右側也加標籤背景寬度計算）
   }
