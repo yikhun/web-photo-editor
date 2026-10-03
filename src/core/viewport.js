@@ -142,6 +142,10 @@ export function createViewport({ stageWrapEl, canvasEl, doc, bus }) {
     requestRender();
   }
 
+  function getPreview() {
+    return previewCanvas;
+  }
+
   function updateCursor() {
     if (spaceHeld || isPanning) {
       canvasEl.style.cursor = isPanning ? 'grabbing' : 'grab';
@@ -256,6 +260,7 @@ export function createViewport({ stageWrapEl, canvasEl, doc, bus }) {
     setOverlay,
     setInteraction,
     preview,
+    getPreview,
     fit,
   };
 }

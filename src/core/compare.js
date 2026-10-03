@@ -148,24 +148,30 @@ export function createCompare({ viewport, doc, bus, stageWrapEl }) {
   }
 
   // ---------- 按住對比（顯示原圖）----------
+  // 放開時要回到「按下前畫面上的樣子」：可能是工具未套用的預覽或前後對比，不一定是已套用的影像
+  let heldPreview = null;
+
   function startHold() {
-    if (holdActive || splitActive) return;
+    if (holdActive) return;
     if (!doc.hasImage()) return;
     holdActive = true;
+    heldPreview = viewport.getPreview();
     viewport.preview(doc.getOriginal());
   }
 
   function endHold() {
     if (!holdActive) return;
     holdActive = false;
-    viewport.preview(null);
+    viewport.preview(heldPreview);
+    heldPreview = null;
   }
 
   function bindHoldButton(btnEl) {
     btnEl.addEventListener('pointerdown', startHold);
-    btnEl.addEventListener('pointerup', endHold);
-    btnEl.addEventListener('pointerleave', endHold);
-    btnEl.addEventListener('pointercancel', endHold);
+    // 在按鈕外放開滑鼠也要恢復，否則會卡在原圖
+    window.addEventListener('pointerup', endHold);
+    window.addEventListener('pointercancel', endHold);
+    window.addEventListener('blur', endHold);
   }
 
   window.addEventListener('keydown', (e) => {
@@ -180,8 +186,8 @@ export function createCompare({ viewport, doc, bus, stageWrapEl }) {
   });
 
   // commit 或切工具時自動關閉 split 對比
-  bus.on('doc:change', () => closeSplit());
-  bus.on('tool:change', () => closeSplit());
+  bus.on('doc:change', () => { closeSplit(); heldPreview = null; });
+  bus.on('tool:change', () => { closeSplit(); heldPreview = null; });
 
   return {
     showCompare: showSplit,
