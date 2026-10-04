@@ -239,13 +239,17 @@ export function createVideoWorkspace(container, opts = {}) {
   // ============================================================
   // 時間軸 / 預覽
   // ============================================================
+  // 每次 seekTo 編號；解碼回來時若已有更新的請求（或已暫停/拖動），舊畫格直接丟掉，避免暫停後還在補畫
+  let seekSeq = 0;
+
   async function seekTo(time) {
     if (!state.info || !state.previewSink) return;
+    const seq = ++seekSeq;
     state.currentTime = Math.max(0, Math.min(state.info.duration, time));
     timeInput.value = String(state.currentTime);
     timeLabel.textContent = `${formatTime(state.currentTime)} / ${formatTime(state.info.duration)}`;
     const frame = await state.previewSink.getFrame(state.currentTime);
-    if (!frame || destroyed) return;
+    if (!frame || destroyed || seq !== seekSeq) return;
     const pctx = previewCanvas.getContext('2d');
     pctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
     pctx.drawImage(frame, 0, 0, previewCanvas.width, previewCanvas.height);
@@ -264,21 +268,25 @@ export function createVideoWorkspace(container, opts = {}) {
     if (!state.info || state.playing) return;
     state.playing = true;
     playBtn.textContent = '⏸';
-    let last = performance.now();
-    const tick = (now) => {
-      if (!state.playing) return;
-      const dt = (now - last) / 1000;
-      last = now;
-      let t = state.currentTime + dt;
-      if (t >= state.info.duration) t = 0;
-      seekTo(t);
-      state.playRaf = requestAnimationFrame(tick);
-    };
-    state.playRaf = requestAnimationFrame(tick);
+    const runId = (state.playRunId = (state.playRunId || 0) + 1);
+    // 上一格解碼畫完才取下一格；解碼慢時自動跳格追上實際時間，不會堆積請求
+    (async () => {
+      let last = performance.now();
+      while (state.playing && state.playRunId === runId && !destroyed) {
+        const now = performance.now();
+        let t = state.currentTime + (now - last) / 1000;
+        last = now;
+        if (t >= state.info.duration) t = 0;
+        await seekTo(t);
+        await new Promise((r) => { state.playRaf = requestAnimationFrame(r); });
+      }
+    })();
   }
 
   function stopPlay() {
     state.playing = false;
+    state.playRunId = (state.playRunId || 0) + 1;
+    seekSeq++; // 丟掉正在解碼中的畫格
     playBtn.textContent = '▶';
     if (state.playRaf) cancelAnimationFrame(state.playRaf);
     state.playRaf = null;
@@ -524,7 +532,8 @@ export function createVideoWorkspace(container, opts = {}) {
   // 智慧偵測遮罩（取樣多幀，僅算一次，所有格共用）
   // ============================================================
   async function ensureSmartMasks(signal) {
-    const boxes = state.watermark.boxes.filter((b) => state.watermark.smartDetect && !b.smartMask);
+    // smartMask：null = 還沒算；false = 算過但偵測不到（整框當 mask），不再重算
+    const boxes = state.watermark.boxes.filter((b) => state.watermark.smartDetect && b.smartMask === null);
     if (boxes.length === 0 || !state.previewSink) return;
     const samples = [];
     const n = 10;
@@ -535,7 +544,7 @@ export function createVideoWorkspace(container, opts = {}) {
       if (frame) samples.push(cloneCanvas(frame));
     }
     for (const b of boxes) {
-      b.smartMask = buildSmartMask(samples, b) || null;
+      b.smartMask = buildSmartMask(samples, b) || false;
     }
   }
 
@@ -543,6 +552,7 @@ export function createVideoWorkspace(container, opts = {}) {
   // 「預覽此格效果」：只處理目前這一格
   // ============================================================
   async function previewCurrentFrame() {
+    stopPlay(); // 處理前先停預覽播放，避免背景解碼和 AI 搶資源
     if (!state.info) return;
     const frame = await state.previewSink.getFrame(state.currentTime);
     if (!frame) {
@@ -585,6 +595,7 @@ export function createVideoWorkspace(container, opts = {}) {
   // 整支影片輸出：去水印
   // ============================================================
   async function runWatermarkExport() {
+    stopPlay(); // 處理前先停預覽播放，避免背景解碼和 AI 搶資源
     if (!state.info) return;
     if (state.watermark.boxes.length === 0) {
       ctx.toast(t('請先框選水印區域'), 'error');
@@ -634,6 +645,7 @@ export function createVideoWorkspace(container, opts = {}) {
   // 整支影片輸出：去背
   // ============================================================
   async function runMattingExport() {
+    stopPlay(); // 處理前先停預覽播放，避免背景解碼和 AI 搶資源
     if (!state.info) return;
     const m = state.matting;
     const container = m.bgMode === 'transparent' ? 'webm' : state.inputContainer;
@@ -687,6 +699,7 @@ export function createVideoWorkspace(container, opts = {}) {
   // 整支影片輸出：放大
   // ============================================================
   async function runUpscaleExport() {
+    stopPlay(); // 處理前先停預覽播放，避免背景解碼和 AI 搶資源
     if (!state.info) return;
     const u = state.upscale;
     const outSize = computeUpscaledSize(state.info.width, state.info.height, u.scale);
